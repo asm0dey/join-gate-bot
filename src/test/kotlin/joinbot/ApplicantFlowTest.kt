@@ -234,6 +234,58 @@ class ApplicantFlowTest : StringSpec({
         e.tg.sent.any { m -> m.chatId == ADMIN && m.buttons.flatten().any { it.data == "r|${s.id}|a" } } shouldBe true
     }
 
+    "forbidden mid-form → reviewers get the answers so far, the waiting session follows" {
+        val e = FlowEnv("af-forbidden-mid")
+        e.group(CHAT2)
+        e.join(CHAT); e.join(CHAT2)
+        e.fillTo(1)
+        e.tg.sendResultByChat[U] = Sent.Forbidden
+        e.press('p', 0)
+        val s = e.subs.list(CHAT, Status.PENDING).single()
+        s.answers shouldBe mapOf("a1" to "Limassol", "a2" to "Yes")
+        e.users.dmOk(U) shouldBe false
+        e.sessions.forUser(U).shouldBeEmpty()
+        e.subs.list(CHAT2, Status.PENDING).single().answers.shouldBeNull()
+        e.tg.sent.any { m -> m.chatId == ADMIN && m.buttons.flatten().any { it.data == "r|${s.id}|a" } } shouldBe true
+    }
+
+    "forbidden summary → reviewers get every answer" {
+        val e = FlowEnv("af-forbidden-summary")
+        e.join(); e.fillTo(6)
+        e.tg.sendResultByChat[U] = Sent.Forbidden
+        e.press('y')
+        e.subs.list(CHAT, Status.PENDING).single().answers!!.keys shouldBe setOf("a1", "a2", "a3", "a4", "a5", "a6", "a7")
+        e.session().shouldBeNull()
+    }
+
+    "a transient failure mid-form keeps the session" {
+        val e = FlowEnv("af-failed-mid")
+        e.join()
+        e.tg.sendResultByChat[U] = Sent.Failed
+        e.press('p', 0)
+        e.session()!!.step shouldBe 1
+        e.subs.list(CHAT, null).shouldBeEmpty()
+    }
+
+    "a transient failure on the first DM → unreachable submission, DM not marked closed" {
+        val e = FlowEnv("af-failed-first")
+        e.users.started(U, "en")
+        e.tg.sendResultByChat[U_CHAT] = Sent.Failed
+        e.join()
+        e.subs.list(CHAT, Status.PENDING).single().answers.shouldBeNull()
+        e.users.dmOk(U) shouldBe true
+        e.session().shouldBeNull()
+    }
+
+    "a legacy blank welcome: a failed first question is the first contact" {
+        val e = FlowEnv("af-blank-failed")
+        e.group(CHAT2, Form("", listOf(Text("x1", "One"))))
+        e.tg.sendResultByChat[U_CHAT] = Sent.Failed
+        e.flow.onJoinRequest(CHAT2, U, U_CHAT, ann, "en")
+        e.subs.list(CHAT2, Status.PENDING).size shouldBe 1
+        e.session(CHAT2).shouldBeNull()
+    }
+
     "/start resumes" {
         val e = FlowEnv("af-start")
         e.join(); e.fillTo(1)

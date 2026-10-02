@@ -69,7 +69,7 @@ class ApplicantFlow(
             if (step != form.fields.size) return stale()
             tg.answer(callbackId)
             tg.edit(userId, messageId, summary(s, form).last())
-            if (action == 'S') submit(s, form) else begin(s, userId)
+            if (action == 'S') submit(s, form) else if (!begin(s, userId)) startNext(userId)
             return
         }
         val field = form.fields.getOrNull(step) ?: return stale()
@@ -112,7 +112,7 @@ class ApplicantFlow(
         val s = sessions.active(userId)?.withLang(lang) ?: return@locked false
         val form = formOf(s) ?: return@locked false
         put(s)
-        ask(s, form)
+        if (!ask(s, form)) startNext(userId)
         true
     }
 
@@ -155,7 +155,10 @@ class ApplicantFlow(
 
     private fun put(s: Session) = sessions.put(s.copy(touchedAt = clock.instant()))
 
-    /** Stores [s] at step 0 and sends welcome + question 1 to [dest]. If that fails the reviewers decide without answers. */
+    /**
+     * Stores [s] at step 0 and sends welcome + question 1 to [dest]. If the first message fails the reviewers decide
+     * without answers. False when the session went to reviewers (or its form is gone).
+     */
     private suspend fun begin(s: Session, dest: Long): Boolean {
         val form = formOf(s) ?: return false
         val start = fresh(s)
@@ -163,18 +166,21 @@ class ApplicantFlow(
         // a blank welcome only survives in forms saved before validateForm required one; Telegram rejects empty text
         val welcome = listOfNotNull(form.welcome.takeIf { it.isNotBlank() },
             Texts.t(s.lang, T.WELCOME_SKIP).takeIf { form.fields.any { !it.required } }).joinToString("\n\n")
-        if (welcome.isNotEmpty() && tg.send(dest, welcome) !is Sent.Ok) {
-            unreachable(start)
+        if (welcome.isEmpty()) return ask(start, form, dest, firstContact = true)
+        val sent = tg.send(dest, welcome)
+        if (sent !is Sent.Ok) {
+            unreachable(start, sent)
             return false
         }
-        ask(start, form, dest)
-        return true
+        return ask(start, form, dest)
     }
 
-    private suspend fun unreachable(s: Session) {
-        users.forbidden(s.userId)
+    /** The user can't be messaged: reviewers get [s] with whatever was answered so far. Only a 403 marks the DM closed. */
+    private suspend fun unreachable(s: Session, why: Sent) {
+        if (why == Sent.Forbidden) users.forbidden(s.userId)
         sessions.delete(s.userId, s.chatId)
-        val id = subs.create(s.chatId, s.userId, s.formVersion, s.state.profile, null, Status.PENDING, clock.instant())
+        val answers = s.state.answers.takeIf { it.isNotEmpty() }
+        val id = subs.create(s.chatId, s.userId, s.formVersion, s.state.profile, answers, Status.PENDING, clock.instant())
         review.submit(id)
     }
 
@@ -190,12 +196,12 @@ class ApplicantFlow(
         val id = form.fields[s.step].id
         val next = s.copy(step = s.step + 1, state = s.state.copy(answers = s.state.answers + (id to value), picks = emptySet(), otherMode = false))
         put(next)
-        ask(next, form)
+        if (!ask(next, form)) startNext(s.userId)
     }
 
     private suspend fun reask(s: Session, form: Form, reason: Reason): Boolean {
         tg.send(s.userId, Texts.t(s.lang, reason.text()))
-        ask(s, form)
+        if (!ask(s, form)) startNext(s.userId)
         return true
     }
 
@@ -214,13 +220,25 @@ class ApplicantFlow(
         startNext(s.userId)
     }
 
-    /** Current question, or the summary once every field is answered. */
-    private suspend fun ask(s: Session, form: Form, dest: Long = s.userId) {
+    /**
+     * Current question, or the summary once every field is answered. A 403 (the DM window closed, or the user blocked
+     * the bot) sends the session to reviewers as unreachable and returns false; so does any failure of the
+     * [firstContact] message. Other failures are left for the user's next message or /start.
+     */
+    private suspend fun ask(s: Session, form: Form, dest: Long = s.userId, firstContact: Boolean = false): Boolean {
         val field = form.fields.getOrNull(s.step)
-        if (field != null) { tg.send(dest, field.prompt, keyboard(s, field)); return }
-        val chunks = summary(s, form)
-        chunks.dropLast(1).forEach { tg.send(dest, it) }
-        tg.send(dest, chunks.last(), listOf(listOf(button(s, T.SUBMIT, 'S'), button(s, T.START_OVER, 'R'))))
+        val messages = if (field != null) listOf(field.prompt to keyboard(s, field)) else summary(s, form).let { c ->
+            c.dropLast(1).map { it to emptyList<List<Button>>() } +
+                (c.last() to listOf(listOf(button(s, T.SUBMIT, 'S'), button(s, T.START_OVER, 'R'))))
+        }
+        for ((i, m) in messages.withIndex()) {
+            val sent = tg.send(dest, m.first, m.second)
+            if (sent == Sent.Forbidden || (firstContact && i == 0 && sent !is Sent.Ok)) {
+                unreachable(s, sent)
+                return false
+            }
+        }
+        return true
     }
 
     private fun button(s: Session, key: T, action: Char, idx: Int = 0) = Button(Texts.t(s.lang, key), cbData(s.chatId, s.step, action, idx))
