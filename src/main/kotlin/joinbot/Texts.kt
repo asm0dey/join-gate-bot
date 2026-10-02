@@ -1,0 +1,123 @@
+package joinbot
+
+// Keys with String.format arguments (all others take none):
+//   NUDGE(count: Int)
+//   DECIDED_BY_APPROVED(name), DECIDED_BY_REJECTED(name), ALREADY_DECIDED(name)
+//   REVIEW_HEADER(applicantName, groupTitle), REVIEW_UNREACHABLE(applicantName)
+// With no args the template is returned unformatted. Avoid a literal percent sign in any text.
+
+enum class T {
+    WELCOME_SKIP, SKIP, OTHER, DONE, AGREE, DISAGREE, SUBMIT, START_OVER, SUMMARY_HEADER, INVALID_REQUIRED, INVALID_TOO_LONG,
+    INVALID_NOT_A_NUMBER, INVALID_TOO_SMALL, INVALID_TOO_LARGE, INVALID_NOT_A_LINK, INVALID_TOO_FEW, INVALID_TOO_MANY, INVALID_WRONG_KIND,
+    TYPE_OTHER, SUBMITTED, DECLINED_CONSENT, EXPIRED, GROUP_GONE, STALE_BUTTON, HOW_TO_JOIN, APPROVED_USER, REJECTED_USER,
+    REVIEW_HEADER, REVIEW_UNREACHABLE, APPROVE, REJECT, DECIDED_BY_APPROVED, DECIDED_BY_REJECTED, ALREADY_DECIDED, NOT_ADMIN_ANYMORE,
+    TRY_AGAIN, WITHDRAWN, NUDGE, NEEDS_INVITE_RIGHT, EXPORT_READY,
+}
+
+private val en = mapOf(
+    T.WELCOME_SKIP to "Optional questions have a Skip button.",
+    T.SKIP to "Skip",
+    T.OTHER to "Other",
+    T.DONE to "Done",
+    T.AGREE to "I agree",
+    T.DISAGREE to "I disagree",
+    T.SUBMIT to "Submit",
+    T.START_OVER to "Start over",
+    T.SUMMARY_HEADER to "Your answers:",
+    T.INVALID_REQUIRED to "This answer is required.",
+    T.INVALID_TOO_LONG to "That is too long. Please shorten it.",
+    T.INVALID_NOT_A_NUMBER to "Please send a whole number.",
+    T.INVALID_TOO_SMALL to "That number is too small.",
+    T.INVALID_TOO_LARGE to "That number is too large.",
+    T.INVALID_NOT_A_LINK to "Please send a full link starting with http:// or https://.",
+    T.INVALID_TOO_FEW to "Please choose more options.",
+    T.INVALID_TOO_MANY to "Please choose fewer options.",
+    T.INVALID_WRONG_KIND to "Please use the buttons or send text, as the question asks.",
+    T.TYPE_OTHER to "Type your answer.",
+    T.SUBMITTED to "Thanks! Your answers were sent to the admins. You will get a message when they decide.",
+    T.DECLINED_CONSENT to "Your join request was declined because you did not agree. You can request to join again.",
+    T.EXPIRED to "This form timed out and your join request was declined. Request to join again to start over.",
+    T.GROUP_GONE to "This group no longer uses this form.",
+    T.STALE_BUTTON to "This button is out of date.",
+    T.HOW_TO_JOIN to "Request to join a group, and I will send you its questions here.",
+    T.APPROVED_USER to "You were approved. Welcome!",
+    T.REJECTED_USER to "Sorry, your join request was rejected.",
+    T.REVIEW_HEADER to "Join request from %s to %s",
+    T.REVIEW_UNREACHABLE to "Could not message %s, so there are no answers. Decide without them?",
+    T.APPROVE to "Approve",
+    T.REJECT to "Reject",
+    T.DECIDED_BY_APPROVED to "Approved by %s",
+    T.DECIDED_BY_REJECTED to "Rejected by %s",
+    T.ALREADY_DECIDED to "Already decided by %s.",
+    T.NOT_ADMIN_ANYMORE to "You can no longer decide for this group.",
+    T.TRY_AGAIN to "Something went wrong. Please try again.",
+    T.WITHDRAWN to "The applicant withdrew or already joined.",
+    T.NUDGE to "%d join requests are waiting. Admins, please open a chat with this bot and press Start.",
+    T.NEEDS_INVITE_RIGHT to "I need the Invite users right to handle join requests.",
+    T.EXPORT_READY to "Your export is ready.",
+)
+
+private val ru = mapOf(
+    T.WELCOME_SKIP to "У необязательных вопросов есть кнопка «Пропустить».",
+    T.SKIP to "Пропустить",
+    T.OTHER to "Другое",
+    T.DONE to "Готово",
+    T.AGREE to "Согласен",
+    T.DISAGREE to "Не согласен",
+    T.SUBMIT to "Отправить",
+    T.START_OVER to "Начать заново",
+    T.SUMMARY_HEADER to "Ваши ответы:",
+    T.INVALID_REQUIRED to "На этот вопрос нужно ответить.",
+    T.INVALID_TOO_LONG to "Слишком длинно. Сократите, пожалуйста.",
+    T.INVALID_NOT_A_NUMBER to "Пришлите целое число.",
+    T.INVALID_TOO_SMALL to "Число слишком маленькое.",
+    T.INVALID_TOO_LARGE to "Число слишком большое.",
+    T.INVALID_NOT_A_LINK to "Пришлите полную ссылку, начинающуюся с http:// или https://.",
+    T.INVALID_TOO_FEW to "Выберите больше вариантов.",
+    T.INVALID_TOO_MANY to "Выберите меньше вариантов.",
+    T.INVALID_WRONG_KIND to "Ответьте так, как просит вопрос: кнопкой или текстом.",
+    T.TYPE_OTHER to "Напишите свой ответ.",
+    T.SUBMITTED to "Спасибо! Ответы отправлены администраторам. Когда они решат, вам придёт сообщение.",
+    T.DECLINED_CONSENT to "Заявка отклонена, потому что вы не согласились. Можно подать заявку снова.",
+    T.EXPIRED to "Время на анкету вышло, заявка отклонена. Подайте заявку снова, чтобы начать заново.",
+    T.GROUP_GONE to "Эта группа больше не использует анкету.",
+    T.STALE_BUTTON to "Эта кнопка устарела.",
+    T.HOW_TO_JOIN to "Подайте заявку на вступление в группу, и я пришлю сюда её вопросы.",
+    T.APPROVED_USER to "Вас приняли. Добро пожаловать!",
+    T.REJECTED_USER to "К сожалению, заявку отклонили.",
+    T.REVIEW_HEADER to "Заявка от %s в %s",
+    T.REVIEW_UNREACHABLE to "Не удалось написать %s, поэтому ответов нет. Решить без них?",
+    T.APPROVE to "Принять",
+    T.REJECT to "Отклонить",
+    T.DECIDED_BY_APPROVED to "Принял(а): %s",
+    T.DECIDED_BY_REJECTED to "Отклонил(а): %s",
+    T.ALREADY_DECIDED to "Уже решил(а): %s.",
+    T.NOT_ADMIN_ANYMORE to "Вы больше не можете решать по этой группе.",
+    T.TRY_AGAIN to "Что-то пошло не так. Попробуйте ещё раз.",
+    T.WITHDRAWN to "Заявитель отозвал заявку или уже вступил.",
+    T.NUDGE to "Заявок на вступление в ожидании: %d. Администраторы, откройте чат с этим ботом и нажмите Start.",
+    T.NEEDS_INVITE_RIGHT to "Мне нужно право «Приглашать пользователей», чтобы обрабатывать заявки.",
+    T.EXPORT_READY to "Экспорт готов.",
+)
+
+object Texts {
+    /** `ru*` language codes get Russian; everything else, including null, gets English. */
+    fun t(lang: String?, key: T, vararg args: Any): String {
+        val template = (if (lang?.startsWith("ru") == true) ru else en).getValue(key)
+        return if (args.isEmpty()) template else template.format(*args)
+    }
+}
+
+/** BAD_OPTION has no text of its own: a bad option index only comes from a stale or forged button. */
+fun Reason.text(): T = when (this) {
+    Reason.REQUIRED -> T.INVALID_REQUIRED
+    Reason.TOO_LONG -> T.INVALID_TOO_LONG
+    Reason.NOT_A_NUMBER -> T.INVALID_NOT_A_NUMBER
+    Reason.TOO_SMALL -> T.INVALID_TOO_SMALL
+    Reason.TOO_LARGE -> T.INVALID_TOO_LARGE
+    Reason.NOT_A_LINK -> T.INVALID_NOT_A_LINK
+    Reason.TOO_FEW -> T.INVALID_TOO_FEW
+    Reason.TOO_MANY -> T.INVALID_TOO_MANY
+    Reason.BAD_OPTION -> T.STALE_BUTTON
+    Reason.WRONG_KIND -> T.INVALID_WRONG_KIND
+}
