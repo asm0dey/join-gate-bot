@@ -1,6 +1,9 @@
 package joinbot
 
 import eu.vendeli.tgbot.TelegramBot
+import io.kotest.core.extensions.TestCaseExtension
+import io.kotest.core.test.TestCase
+import io.kotest.engine.test.TestResult
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
@@ -43,10 +46,22 @@ class FakeTelegram {
     /** A chat without an entry fails the lookup. */
     val adminsOf: MutableMap<Long, List<Admin>> = ConcurrentHashMap()
     /** Declining these users fails at the transport level. */
-    val throwOnDeclineFor: MutableSet<Long> = ConcurrentHashMap.newKeySet()
+    val failDeclineFor: MutableSet<Long> = ConcurrentHashMap.newKeySet()
     private val ids = AtomicLong(100)
 
-    val bot = TelegramBot(token = "000:fake-token-for-tests", httpClient = HttpClient(MockEngine { handle(it.url.encodedPath.substringAfterLast('/'), it.body.toByteArray().decodeToString()) }))
+    /** The fake's own errors (unknown method, malformed body). Production code swallows them, so FakeTelegramFaults fails the test. */
+    val faults: MutableList<Throwable> = Collections.synchronizedList(mutableListOf())
+
+    val bot = TelegramBot(token = "000:fake-token-for-tests", httpClient = HttpClient(MockEngine {
+        try {
+            handle(it.url.encodedPath.substringAfterLast('/'), it.body.toByteArray().decodeToString())
+        } catch (e: InjectedFailure) {
+            throw e
+        } catch (e: Throwable) {
+            faults += e; unchecked += e
+            throw e
+        }
+    }))
 
     private fun result(chatId: Long): Sent = sendResultByChat[chatId] ?: sendResult ?: Sent.Ok(ids.incrementAndGet())
 
@@ -82,7 +97,7 @@ class FakeTelegram {
             val chat = j.long("chat_id"); val user = j.long("user_id")
             val approve = method.startsWith("approve")
             calls += "${if (approve) "approve" else "decline"} $chat $user"
-            if (!approve && user in throwOnDeclineFor) throw IOException("decline failed")
+            if (!approve && user in failDeclineFor) throw InjectedFailure()
             when (decideResult) {
                 Decision.OK -> ok("true")
                 Decision.GONE -> fail(400, "Bad Request: HIDE_REQUESTER_MISSING")
@@ -111,6 +126,29 @@ class FakeTelegram {
 
     private fun MockRequestHandleScope.reply(status: HttpStatusCode, content: String) =
         respond(content, status, headersOf(HttpHeaders.ContentType, "application/json"))
+
+    companion object {
+        /** Faults of every instance not yet checked; drained by FakeTelegramFaults after each test. */
+        private val unchecked: MutableList<Throwable> = Collections.synchronizedList(mutableListOf())
+
+        fun drainFaults(): List<Throwable> = synchronized(unchecked) { unchecked.toList().also { unchecked.clear() } }
+    }
+}
+
+/** A scripted transport failure, not a fault of the fake. */
+private class InjectedFailure : IOException("injected transport failure")
+
+/** Fails any test during which a FakeTelegram hit an error of its own. Registered in io.kotest.provided.ProjectConfig. */
+object FakeTelegramFaults : TestCaseExtension {
+    override suspend fun intercept(testCase: TestCase, execute: suspend (TestCase) -> TestResult): TestResult {
+        FakeTelegram.drainFaults()
+        val result = execute(testCase)
+        return check(result, FakeTelegram.drainFaults())
+    }
+
+    fun check(result: TestResult, faults: List<Throwable>): TestResult =
+        if (faults.isEmpty() || result.isErrorOrFailure) result
+        else TestResult.Failure(result.duration, AssertionError("FakeTelegram faulted ${faults.size} time(s)", faults.first()))
 }
 
 private fun JsonObject.str(key: String) = get(key)?.jsonPrimitive?.content

@@ -101,7 +101,7 @@ class PurgeTest : StringSpec({
     "one failing decline does not stop the rest" {
         val e = PurgeEnv("purge-failing")
         e.groups.upsert(-1, "G", true)
-        e.tg.throwOnDeclineFor += 1L
+        e.tg.failDeclineFor += 1L
         e.session(1, -1, Duration.ofDays(8))
         e.session(2, -1, Duration.ofDays(8))
         e.purge.runOnce()

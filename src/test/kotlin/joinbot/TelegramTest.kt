@@ -1,11 +1,14 @@
 package joinbot
 
+import eu.vendeli.tgbot.api.chat.getChat
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotBeBlank
 import io.kotest.matchers.string.shouldNotContain
+import io.kotest.engine.test.TestResult
+import kotlin.time.Duration
 
 private val expectedArgs: Map<T, Array<Any>> = mapOf(
     T.NUDGE to arrayOf(3),
@@ -74,6 +77,12 @@ class TelegramTest : StringSpec({
     }
     "failed admins lookup is null" {
         failingBot(400, "Bad Request").chatAdmins(-100) shouldBe null
+    }
+    "a fault in the fake Telegram fails the test" {
+        val fake = FakeTelegram()
+        runCatching { getChat().sendReturning(5, fake.bot).await() }
+        fake.faults.single().message shouldContain "unexpected method getChat"
+        FakeTelegramFaults.check(TestResult.Success(Duration.ZERO), FakeTelegram.drainFaults()).isFailure shouldBe true
     }
     "every T has en and ru" {
         T.entries.forEach {

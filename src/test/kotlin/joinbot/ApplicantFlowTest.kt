@@ -181,7 +181,7 @@ class ApplicantFlowTest : StringSpec({
 
     "consent disagree declines and forgets" {
         val e = FlowEnv("af-consent")
-        e.tg.throwOnDeclineFor += U
+        e.tg.failDeclineFor += U
         e.join(); e.fillTo(6)
         e.press('n')
         e.tg.calls.contains("decline $CHAT $U") shouldBe true
