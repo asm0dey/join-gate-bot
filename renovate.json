@@ -1,0 +1,59 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true
+  },
+  "docker": {
+    "pinDigests": true
+  },
+  "packageRules": [
+    {
+      "description": "One PR for everything that is not a major bump. Majors stay on their own, and a security update still opens its own PR regardless of this rule.",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest",
+        "pin",
+        "bump"
+      ],
+      "groupName": "all non-major dependencies"
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "The Bun version in the version catalog, marked with a `# renovate:` comment.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^gradle/libs\\.versions\\.toml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)( extractVersion=(?<extractVersion>\\S+))?\\n\\S+ = \"(?<currentValue>[^\"]+)\""
+      ]
+    },
+    {
+      "description": "Java in .sdkmanrc, looked up in SDKMAN's own candidate list so Renovate only proposes identifiers `sdk install` (and mise) accept.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)\\.sdkmanrc$/"
+      ],
+      "matchStrings": [
+        "(?<depName>java)=(?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "custom.sdkman",
+      "versioningTemplate": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)\\+(?<build>\\d+)(\\.(?<revision>\\d+))?(?<compatibility>-librca)$"
+    }
+  ],
+  "customDatasources": {
+    "sdkman": {
+      "description": "SDKMAN answers with one comma-separated line; split it into one release per identifier.",
+      "defaultRegistryUrlTemplate": "https://api.sdkman.io/2/candidates/{{packageName}}/linuxx64/versions/all",
+      "format": "plain",
+      "transformTemplates": [
+        "{ \"releases\": $map($split(releases[0].version, \",\"), function($v) { { \"version\": $v } }) }"
+      ]
+    }
+  }
+}

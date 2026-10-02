@@ -24,13 +24,24 @@ the admin touching Telegram's join-request list.
 | Updates | Long polling; HTTPS only via `MINIAPP_URL` (host-agnostic) | Webhook; baked-in reverse proxy |
 | Reviewers | Admins of the guarded group who have started the bot | Separate admin group; invite-right-only subset |
 | Retention | Keep answers (Tink-encrypted), list + CSV export + per-group auto-purge | Delete after decision; Google Sheets |
+| Build orchestration | SDKMAN pins Java (`.sdkmanrc`); mise pins Bun and defines tasks; Gradle builds only the JVM side; Bun builds `web/` | gradle-bun (Gradle setup is hard); go-task (can't pin tools) |
+| Frontend delivery | Served from the filesystem (`WEB_DIR`), not from the jar | Bundled into jar resources |
 
 ## 1. Architecture
 
-One process, one Gradle module, flat package `joinbot`. Build, toolchain,
-versions, Dockerfile, Renovate and CI are copied from `exchange-bot`
-(Kotlin 2.4, vendeli 9.6, Ktor CIO, H2 file + Flyway + Exposed, Tink, kotest,
-Svelte 5 + daisyUI built with bun via gradle-bun).
+One process, one Gradle module, flat package `joinbot`. Libraries follow
+`exchange-bot` (Kotlin 2.4, vendeli 9.6, Ktor CIO, H2 file + Flyway + Exposed,
+Tink, kotest, Svelte 5 + daisyUI), with two departures:
+
+- **Toolchain:** `.sdkmanrc` pins Java (`27.0.0+36-librca`), read by SDKMAN
+  auto-env and by mise (`idiomatic_version_file_enable_tools = ["java"]`);
+  `mise.toml` pins Bun (`1.4.2`, Renovate bumps it) and is the single entry point: `mise run build`,
+  `mise run test`. Gradle is plain Kotlin/JVM with no bun plugin; Bun builds
+  `web/` into `web/dist` on its own. If Kotlin 2.4 cannot emit JVM 27
+  bytecode, run on 27 with `jvmTarget` 25.
+- **Static files:** Ktor serves the SPA from the filesystem,
+  `staticFiles("/", File(WEB_DIR))`, `WEB_DIR` defaulting to `web/dist`. The jar
+  carries no UI; the image is the only complete artifact.
 
 ```
 Telegram long polling ──► bot handlers ─┐
@@ -47,7 +58,7 @@ Mini App (Ktor CIO, /api) ──────────────┘
 | `AdminCheck.kt` | `getChatAdministrators` with ~60 s cache; decisions and writes bypass the cache. |
 | `MiniApp{Auth,Server,Api}.kt` | `tma <initData>` auth (copied `InitDataVerifier`), static SPA, JSON API. |
 | `Purge.kt` | Daily coroutine: delete submissions past retention; expire idle sessions. |
-| `web/` | Svelte admin UI. |
+| `web/` | Svelte admin UI, built by Bun to `web/dist`. |
 
 ### Data-driven chain (not vendeli `inputChain`/`Wizard`)
 
@@ -217,10 +228,18 @@ ktor-server-test-host — all as in `exchange-bot`.
 
 ## 7. Ops
 
-Dockerfile (hardened distroless Liberica JRE, uid 10001, `/app/data` volume),
-Renovate, `ci.yml`, `release.yml` (`vN` tags → GHCR) copied from `exchange-bot`.
+Dockerfile: a `oven/bun` stage builds `web/dist`, a Gradle stage builds the
+jar, and the runtime stage (hardened distroless Liberica JRE 27 if that tag
+exists, else 25; uid 10001; `/app/data` volume) copies the jar plus
+`web/dist` → `/app/web` with `WEB_DIR=/app/web`.
 
-Env: `BOT_TOKEN`, `MINIAPP_URL`, `MINIAPP_PORT` (default 8080),
+CI (`ci.yml`): `jdx/mise-action` (Java from `.sdkmanrc`, Bun from `mise.toml`), then `mise run build` — the same command as
+local. Release (`release.yml`): `vN` tags → tests, then GHCR image
+`:N` + `:latest`; no jar on the GitHub Release, since the jar alone has no UI.
+Renovate config copied from `exchange-bot`; its mise manager tracks `mise.toml`.
+
+Env: `BOT_TOKEN`, `MINIAPP_URL`, `MINIAPP_PORT` (default 8080), `WEB_DIR`
+(default `web/dist`),
 `DATA_KEYSET`, `DB_FILE_KEY`, `DB_USER_PW`. A `keygen`
 entry point generates the keyset.
 

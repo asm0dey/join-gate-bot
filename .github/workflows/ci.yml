@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Installs Java from .sdkmanrc and Bun from mise.toml, and caches both.
+      - uses: jdx/mise-action@v5
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      # Bun's package cache; node_modules itself is deliberately not cached.
+      - uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('web/bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+
+      # Same command as local: builds web/dist, then the jar, and runs all tests.
+      - run: mise run build
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: test-results
+          path: build/test-results/
+          retention-days: 5
