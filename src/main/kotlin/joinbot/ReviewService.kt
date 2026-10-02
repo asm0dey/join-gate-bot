@@ -43,10 +43,10 @@ class ReviewService(
         val result = if (status == Status.APPROVED) tg.approve(s.chatId, s.userId) else tg.decline(s.chatId, s.userId)
         val final = when (result) {
             Decision.OK -> status
-            Decision.TRANSIENT -> { subs.revert(s.id); return alert(T.TRY_AGAIN) }
+            Decision.TRANSIENT -> { subs.revert(s.id, status, adminId); return alert(T.TRY_AGAIN) }
+            // one conditional step: a revert first would let another click win in between
             Decision.GONE -> {
-                subs.revert(s.id)
-                if (!subs.decide(s.id, Status.WITHDRAWN, adminId, clock.instant())) return alreadyDecided()
+                if (!subs.transition(s.id, status, adminId, Status.WITHDRAWN)) return alreadyDecided()
                 Status.WITHDRAWN
             }
         }

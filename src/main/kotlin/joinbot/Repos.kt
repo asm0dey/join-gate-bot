@@ -235,12 +235,20 @@ class SubmissionRepo(private val db: Database, private val crypto: Crypto) {
         } > 0
     }
 
-    fun revert(id: Long) = transaction(db) {
-        Submissions.update({ Submissions.id eq id }) {
+    /** Undoes [by]'s decision to [from], back to PENDING; false when the row no longer holds exactly that decision. */
+    fun revert(id: Long, from: Status, by: Long): Boolean = transaction(db) {
+        Submissions.update({ won(id, from, by) }) {
             it[status] = Status.PENDING.name; it[decidedBy] = null; it[decidedAt] = null
-        }
-        Unit
+        } > 0
     }
+
+    /** Turns [decidedBy]'s decision [from] into [to] in one conditional step; false when the row no longer holds it. */
+    fun transition(id: Long, from: Status, decidedBy: Long, to: Status): Boolean = transaction(db) {
+        Submissions.update({ won(id, from, decidedBy) }) { it[status] = to.name } > 0
+    }
+
+    private fun won(id: Long, status: Status, by: Long) =
+        (Submissions.id eq id) and (Submissions.status eq status.name) and (Submissions.decidedBy eq by)
 
     /** Review messages go with it (FK cascade). */
     fun delete(id: Long) = transaction(db) { Submissions.deleteWhere { Submissions.id eq id }; Unit }

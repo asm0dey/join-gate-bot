@@ -70,10 +70,25 @@ class ReposTest : StringSpec({
         val subs = SubmissionRepo(db, testCrypto())
         val id = subs.create(1, 5, 1, p, null, Status.PENDING, now)
         subs.decide(id, Status.APPROVED, 7, now) shouldBe true
-        subs.revert(id)
+        subs.revert(id, Status.APPROVED, 8) shouldBe false // not 8's decision
+        subs.revert(id, Status.REJECTED, 7) shouldBe false // not that decision
+        subs.get(id)!!.status shouldBe Status.APPROVED
+        subs.revert(id, Status.APPROVED, 7) shouldBe true
         subs.get(id)!!.let { it.status shouldBe Status.PENDING; it.decidedBy shouldBe null; it.decidedAt shouldBe null }
         subs.decide(id, Status.REJECTED, 8, now) shouldBe true
         subs.get(id)!!.decidedBy shouldBe 8
+    }
+
+    "transition moves only the named admin's decision" {
+        val db = testDb("transition"); group(db, 1)
+        val subs = SubmissionRepo(db, testCrypto())
+        val id = subs.create(1, 5, 1, p, null, Status.PENDING, now)
+        subs.transition(id, Status.PENDING, 7, Status.WITHDRAWN) shouldBe false // undecided: decided_by is null
+        subs.decide(id, Status.APPROVED, 7, now) shouldBe true
+        subs.transition(id, Status.APPROVED, 8, Status.WITHDRAWN) shouldBe false
+        subs.transition(id, Status.APPROVED, 7, Status.WITHDRAWN) shouldBe true
+        subs.get(id)!!.let { it.status shouldBe Status.WITHDRAWN; it.decidedBy shouldBe 7; it.decidedAt shouldBe now }
+        subs.transition(id, Status.APPROVED, 7, Status.WITHDRAWN) shouldBe false
     }
 
     "unreachable submission has null answers" {
