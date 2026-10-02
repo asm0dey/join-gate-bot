@@ -10,6 +10,8 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- default entry point; override with -Dexec.mainClass=... -->
+        <exec.mainClass>joinbot.MainKt</exec.mainClass>
         <kotlin.version>2.4.20</kotlin.version>
         <ksp.maven.version>0.4.7</ksp.maven.version>
         <telegrambot.version>9.6.0</telegrambot.version>
@@ -124,9 +126,6 @@
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.6.1</version>
-                <configuration>
-                    <mainClass>joinbot.MainKt</mainClass>
-                </configuration>
             </plugin>
         </plugins>
     </build>
