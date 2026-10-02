@@ -52,3 +52,18 @@ test('validate mirrors server messages', () => {
   const m = { id: 'm', type: 'multi', prompt: 'p', options: ['a'], max: 0, required: true } as Multi
   expect(validate(form(m))).toEqual(['m: max must be at least 1 when required'])
 })
+
+test('validate: whole-number limits', () => {
+  expect(validate(form({ id: 'a', type: 'multi', prompt: 'p', options: ['x'], min: 1.5, required: true }))).toEqual(['a: min and max must be whole numbers'])
+  expect(validate(form({ id: 'a', type: 'multi', prompt: 'p', options: ['x'], max: 3e9, required: false }))).toEqual(['a: min and max must be whole numbers'])
+  expect(validate(form({ id: 'b', type: 'int', prompt: 'p', min: 0.5, required: true }))).toEqual(['b: min and max must be whole numbers'])
+  expect(validate(form({ id: 'b', type: 'int', prompt: 'p', max: 3e9, required: true }))).toEqual([])
+})
+
+test('validate: limits and lengths', () => {
+  expect(validate(form({ id: 'a', type: 'multi', prompt: 'p', options: ['x'], min: -1, required: false }))).toEqual(['a: min and max must not be negative'])
+  expect(validate(form({ id: 'a', type: 'radio', prompt: 'p'.repeat(1001), options: ['o'.repeat(65)], other: false, required: true })))
+    .toEqual(['a: prompt longer than 1000 chars', 'a: option label empty or longer than 64 chars'])
+  const many = Array.from({ length: 51 }, (_, i) => ({ id: 'i' + i, type: 'link', prompt: 'p', required: true }))
+  expect(validate(form(...many))).toEqual(['form: more than 50 fields'])
+})

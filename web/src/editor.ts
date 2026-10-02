@@ -80,7 +80,10 @@ export function validate(f: Form): string[] {
       if (x.options.length > MAX_OPTIONS) err(`more than ${MAX_OPTIONS} options`)
       if (x.options.some(o => o.trim() === '' || o.length > MAX_OPTION_LEN)) err(`option label empty or longer than ${MAX_OPTION_LEN} chars`)
     }
-    if (x.type === 'multi') {
+    const I32 = (n?: number) => n == null || (Number.isInteger(n) && Math.abs(n) <= 2147483647)
+    if (x.type === 'multi' && !(I32(x.min) && I32(x.max))) err('min and max must be whole numbers')
+    else if (x.type === 'int' && !(Number.isSafeInteger(x.min ?? 0) && Number.isSafeInteger(x.max ?? 0))) err('min and max must be whole numbers')
+    else if (x.type === 'multi') {
       if (x.min != null && x.max != null && x.min > x.max) err('min > max')
       if (x.min != null && x.min > x.options.length) err('min exceeds option count')
       if ((x.min ?? 0) < 0 || (x.max ?? 0) < 0) err('min and max must not be negative')

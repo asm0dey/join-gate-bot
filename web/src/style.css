@@ -18,28 +18,17 @@
   --radius-field: 0.625rem;
 }
 
-/* The only two colours of our own. Amber = has the base to give, teal = wants the base.
-   Never red/green: those read as sell/buy and price moves, and this is not a venue. */
 @theme {
-  --color-give: #a8620a;
-  --color-give-soft: #fbf1e2;
-  --color-want: #16707a;
-  --color-want-soft: #e2f3f4;
   --color-link: var(--tg-theme-link-color, #2481cc);
   --color-hint: var(--tg-theme-hint-color, #6f7780);
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
 }
 [data-scheme="dark"] {
   color-scheme: dark;
-  --color-give: #e6a54a;
-  --color-give-soft: #35291a;
-  --color-want: #56c2cc;
-  --color-want-soft: #17302f;
 }
 
 html, body { background: var(--color-base-200); color: var(--color-base-content); }
 /* A native <select>'s dropdown is drawn by the WebView, not us: without this its options inherit
    the dark theme's white text onto the platform's default white list. */
 option { background: var(--color-base-100); color: var(--color-base-content); }
-.amount { font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
