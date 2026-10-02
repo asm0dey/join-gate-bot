@@ -310,7 +310,7 @@ Replace the `"…"` option in the spec example with `"Music"` so the example is 
   @Serializable data class Profile(val name: String, val username: String?)
   enum class Status { PENDING, APPROVED, REJECTED, WITHDRAWN, EXPIRED }
   data class Group(val chatId: Long, val title: String, val active: Boolean, val retentionDays: Int, val nudgedAt: Instant?)
-  @Serializable data class SessionState(val answers: Map<String, String> = emptyMap(), val picks: Set<Int> = emptySet(), val otherMode: Boolean = false)
+  @Serializable data class SessionState(val profile: Profile, val answers: Map<String, String> = emptyMap(), val picks: Set<Int> = emptySet(), val otherMode: Boolean = false)   // profile: submission.profile is NOT NULL, and submit/expiry happen long after the join request
   data class Session(val userId: Long, val chatId: Long, val formVersion: Int, val step: Int, val state: SessionState, val lang: String?, val touchedAt: Instant)
   data class Submission(val id: Long, val chatId: Long, val userId: Long, val formVersion: Int?, val profile: Profile,
                         val answers: Map<String, String>?, val status: Status, val decidedBy: Long?, val decidedAt: Instant?, val createdAt: Instant)
@@ -380,7 +380,7 @@ Each test body asserts exactly what its name and comment say. Use `testDb("<test
   data class Button(val text: String, val data: String)
   sealed interface Sent { data class Ok(val messageId: Long) : Sent; data object Forbidden : Sent; data object Failed : Sent }
   enum class Decision { OK, GONE, TRANSIENT }       // GONE = HIDE_REQUESTER_MISSING or USER_ALREADY_PARTICIPANT in the error description
-  data class Admin(val userId: Long, val isBot: Boolean, val canInvite: Boolean)   // owner → canInvite = true
+  data class Admin(val userId: Long, val name: String, val isBot: Boolean, val canInvite: Boolean)   // owner → canInvite = true; name = user's first name, for "decided by Y"
   interface Tg {
       suspend fun send(chatId: Long, text: String, buttons: List<List<Button>> = emptyList()): Sent
       suspend fun edit(chatId: Long, messageId: Long, text: String, buttons: List<List<Button>> = emptyList())
