@@ -1,0 +1,297 @@
+package joinbot
+
+import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.ints.shouldBeGreaterThanOrEqual
+import io.kotest.matchers.ints.shouldBeLessThan
+import io.kotest.matchers.ints.shouldBeLessThanOrEqual
+import io.kotest.matchers.nulls.shouldBeNull
+import io.kotest.matchers.shouldBe
+
+private const val CHAT = -100L
+private const val CHAT2 = -200L
+private const val U = 5L
+private const val U_CHAT = 55L
+private const val ADMIN = 1L
+private const val MSG = 900L
+private val ann = Profile("Ann", "ann")
+
+// spec §2 example
+private val form = Form("Hi! A few questions before you join", listOf(
+    Radio("a1", "Where do you live?", listOf("Limassol", "Nicosia"), other = true),
+    Radio("a2", "Agree to the rules?", listOf("Yes", "No")),
+    Multi("a3", "Interests?", listOf("Music", "Sport", "Books"), min = 1, max = 3),
+    Text("a4", "About you", maxLen = 300),
+    IntField("a5", "Age?", min = 18, max = 120),
+    Link("a6", "LinkedIn?", required = false),
+    Consent("a7", "Privacy terms… Do you agree?"),
+))
+
+private class FlowEnv(name: String) {
+    val db = testDb(name)
+    val clock = TestClock()
+    val tg = FakeTg()
+    val groups = GroupRepo(db)
+    val forms = FormRepo(db)
+    val sessions = SessionRepo(db, testCrypto())
+    val subs = SubmissionRepo(db, testCrypto())
+    val users = BotUserRepo(db)
+    val review = ReviewService(subs, forms, groups, users, AdminCheck(tg, clock), tg, clock)
+    val flow = ApplicantFlow(groups, forms, sessions, subs, users, review, tg, clock)
+
+    init { group(CHAT); users.started(ADMIN, "en") }
+
+    fun group(chat: Long, f: Form = form) {
+        groups.upsert(chat, "Club$chat", true)
+        forms.save(chat, f, 0, 9, clock.instant())
+        tg.adminsOf[chat] = listOf(Admin(ADMIN, "Boss", false, true))
+    }
+
+    suspend fun join(chat: Long = CHAT) = flow.onJoinRequest(chat, U, U_CHAT, ann, "en")
+    fun session(chat: Long = CHAT) = sessions.get(U, chat)
+    suspend fun press(action: Char, idx: Int = 0, chat: Long = CHAT, step: Int = session(chat)!!.step) =
+        flow.onCallback(U, "cb", cbData(chat, step, action, idx), "en", MSG)
+    suspend fun say(text: String?) = flow.onMessage(U, text, "en")
+    fun toUser() = tg.sent.filter { it.chatId == U || it.chatId == U_CHAT }
+    fun last() = toUser().last()
+    fun stale() = tg.calls.count { it == "answer cb ${Texts.t("en", T.STALE_BUTTON)} alert" }
+
+    /** Answers the example form from the current step up to (not including) [step]. */
+    suspend fun fillTo(step: Int, chat: Long = CHAT) {
+        val script: List<suspend () -> Unit> = listOf(
+            { press('p', 0, chat) }, { press('p', 0, chat) }, { press('t', 0, chat); press('d', 0, chat) },
+            { say("I like cats") }, { say("42") }, { press('s', 0, chat) }, { press('y', 0, chat) },
+        )
+        val from = session(chat)!!.step
+        script.subList(from, step).forEach { it() }
+    }
+}
+
+private fun en(key: T) = Texts.t("en", key)
+
+class ApplicantFlowTest : StringSpec({
+    "join request DMs welcome and question 1" {
+        val e = FlowEnv("af-join")
+        e.join()
+        e.tg.sent.map { it.chatId } shouldBe listOf(U_CHAT, U_CHAT)
+        e.tg.sent[0].text shouldBe "${form.welcome}\n\n${en(T.WELCOME_SKIP)}"
+        e.tg.sent[1].text shouldBe "Where do you live?"
+        e.tg.sent[1].buttons.flatten().map { it.text } shouldBe listOf("Limassol", "Nicosia", en(T.OTHER))
+        e.tg.sent[1].buttons.flatten().map { it.data } shouldBe listOf("f|$CHAT|0|p|0", "f|$CHAT|0|p|1", "f|$CHAT|0|o|0")
+        e.session()!!.step shouldBe 0
+    }
+
+    "no active group or no form → ignored" {
+        val e = FlowEnv("af-ignore")
+        e.groups.upsert(CHAT2, "NoForm", true)
+        e.flow.onJoinRequest(CHAT2, U, U_CHAT, ann, "en")
+        e.groups.upsert(CHAT, "Club", false)
+        e.join()
+        e.tg.sent.shouldBeEmpty()
+        e.sessions.forUser(U).shouldBeEmpty()
+    }
+
+    "scripted run to submit stores a sealed submission" {
+        val e = FlowEnv("af-run")
+        e.join()
+        e.fillTo(7)
+        e.session()!!.step shouldBe 7
+        e.last().buttons.flatten().map { it.data } shouldBe listOf("f|$CHAT|7|S|0", "f|$CHAT|7|R|0")
+        e.last().text shouldBe listOf(en(T.SUMMARY_HEADER), "Where do you live?: Limassol", "Agree to the rules?: Yes",
+            "Interests?: Music", "About you: I like cats", "Age?: 42", "LinkedIn?: —", "Privacy terms… Do you agree?: ✓").joinToString("\n")
+        e.press('S')
+        val s = e.subs.list(CHAT, Status.PENDING).single()
+        s.answers shouldBe mapOf("a1" to "Limassol", "a2" to "Yes", "a3" to "Music", "a4" to "I like cats", "a5" to "42", "a6" to "", "a7" to "✓")
+        s.profile shouldBe ann
+        s.formVersion shouldBe 1
+        e.session().shouldBeNull()
+        e.toUser().last().text shouldBe en(T.SUBMITTED)
+        e.tg.sent.any { m -> m.chatId == ADMIN && m.buttons.flatten().any { it.data == "r|${s.id}|a" } } shouldBe true
+    }
+
+    "button answers remove the question keyboard, multi toggles show ✓" {
+        val e = FlowEnv("af-kb")
+        e.join()
+        e.press('p', 1)
+        e.tg.edits.last() shouldBe EditMsg(U, MSG, "Where do you live?", emptyList())
+        e.fillTo(2)
+        e.press('t', 0); e.press('t', 2)
+        e.tg.edits.last().buttons.flatten().map { it.text } shouldBe listOf("✓ Music", "Sport", "✓ Books", en(T.DONE))
+        e.press('t', 0)
+        e.tg.edits.last().buttons.flatten().map { it.text } shouldBe listOf("Music", "Sport", "✓ Books", en(T.DONE))
+        e.session()!!.state.picks shouldBe setOf(2)
+        e.press('d')
+        e.session()!!.state.answers["a3"] shouldBe "Books"
+        e.tg.edits.last() shouldBe EditMsg(U, MSG, "Interests?", emptyList())
+    }
+
+    "multi done with nothing picked alerts and keeps the step" {
+        val e = FlowEnv("af-few")
+        e.join(); e.fillTo(2)
+        e.press('d')
+        e.tg.calls.last() shouldBe "answer cb ${en(T.INVALID_TOO_FEW)} alert"
+        e.session()!!.step shouldBe 2
+    }
+
+    "invalid typed input re-asks with reason" {
+        val e = FlowEnv("af-invalid")
+        e.join(); e.fillTo(4)
+        e.say("17") shouldBe true
+        e.toUser().takeLast(2).map { it.text } shouldBe listOf(en(T.INVALID_TOO_SMALL), "Age?")
+        e.session()!!.step shouldBe 4
+    }
+
+    "typed text to a button field re-asks with WRONG_KIND" {
+        val e = FlowEnv("af-kind")
+        e.join()
+        e.say("Paphos") shouldBe true
+        e.toUser().takeLast(2).map { it.text } shouldBe listOf(en(T.INVALID_WRONG_KIND), "Where do you live?")
+        e.session()!!.step shouldBe 0
+    }
+
+    "other asks for text and stores it" {
+        val e = FlowEnv("af-other")
+        e.join()
+        e.press('o')
+        e.last().text shouldBe en(T.TYPE_OTHER)
+        e.session()!!.state.otherMode shouldBe true
+        e.say("Paphos")
+        e.session()!!.state.answers shouldBe mapOf("a1" to "Paphos")
+        e.session()!!.state.otherMode shouldBe false
+        e.last().text shouldBe "Agree to the rules?"
+    }
+
+    "consent disagree declines and forgets" {
+        val e = FlowEnv("af-consent")
+        e.tg.throwOnDeclineFor += U
+        e.join(); e.fillTo(6)
+        e.press('n')
+        e.tg.calls.contains("decline $CHAT $U") shouldBe true
+        e.session().shouldBeNull()
+        e.subs.list(CHAT, null).shouldBeEmpty()
+        e.last().text shouldBe en(T.DECLINED_CONSENT)
+    }
+
+    "start over resets to step 0" {
+        val e = FlowEnv("af-restart")
+        e.join(); e.fillTo(7)
+        e.press('R')
+        e.session()!!.step shouldBe 0
+        e.session()!!.state.answers shouldBe emptyMap()
+        e.toUser().takeLast(2).map { it.text } shouldBe listOf("${form.welcome}\n\n${en(T.WELCOME_SKIP)}", "Where do you live?")
+    }
+
+    "admin edit mid-flow does not shift questions" {
+        val e = FlowEnv("af-pinned")
+        e.join()
+        e.forms.save(CHAT, form.copy(fields = listOf(form.fields[0], Text("b2", "New question?")) + form.fields.drop(1)), 1, 9, e.clock.instant())
+        e.press('p', 0)
+        e.last().text shouldBe "Agree to the rules?"
+        e.session()!!.formVersion shouldBe 1
+    }
+
+    "second group waits, then starts after submit" {
+        val e = FlowEnv("af-wait")
+        e.group(CHAT2)
+        e.join(CHAT)
+        e.join(CHAT2)
+        e.tg.sent.size shouldBe 2
+        e.session(CHAT2)!!.step shouldBe WAITING
+        e.fillTo(7)
+        e.press('S')
+        e.session(CHAT2)!!.step shouldBe 0
+        e.toUser().takeLast(2).map { it.text } shouldBe listOf("${form.welcome}\n\n${en(T.WELCOME_SKIP)}", "Where do you live?")
+        e.last().buttons.flatten().first().data shouldBe "f|$CHAT2|0|p|0"
+    }
+
+    "DM forbidden → unreachable submission to reviewers" {
+        val e = FlowEnv("af-forbidden")
+        e.tg.sendResultByChat[U_CHAT] = Sent.Forbidden
+        e.join()
+        val s = e.subs.list(CHAT, Status.PENDING).single()
+        s.answers.shouldBeNull()
+        s.profile shouldBe ann
+        e.users.dmOk(U) shouldBe false
+        e.session().shouldBeNull()
+        e.tg.sent.any { m -> m.chatId == ADMIN && m.buttons.flatten().any { it.data == "r|${s.id}|a" } } shouldBe true
+    }
+
+    "/start resumes" {
+        val e = FlowEnv("af-start")
+        e.join(); e.fillTo(1)
+        e.flow.onStart(U, "en") shouldBe true
+        e.last().text shouldBe "Agree to the rules?"
+        e.flow.onStart(42, "en") shouldBe false
+    }
+
+    "non-text message re-asks" {
+        val e = FlowEnv("af-nontext")
+        e.join(); e.fillTo(3)
+        e.say(null) shouldBe true
+        e.toUser().takeLast(2).map { it.text } shouldBe listOf(en(T.INVALID_WRONG_KIND), "About you")
+        e.session()!!.step shouldBe 3
+        e.flow.onMessage(42, "hi", "en") shouldBe false
+    }
+
+    "stale button changes nothing" {
+        val e = FlowEnv("af-stale")
+        e.join()
+        e.press('p', 0)
+        e.press('p', 1, step = 0)
+        e.stale() shouldBe 1
+        e.session()!!.state.answers shouldBe mapOf("a1" to "Limassol")
+        e.session()!!.step shouldBe 1
+        e.fillTo(7)
+        e.press('R')
+        e.press('S', step = 7)
+        e.stale() shouldBe 2
+        e.session()!!.step shouldBe 0
+        e.fillTo(7)
+        e.press('S')
+        e.press('S', step = 7)
+        e.stale() shouldBe 3
+        e.subs.list(CHAT, null).size shouldBe 1
+        e.flow.onCallback(U, "cb", "garbage", "en", MSG)
+        e.stale() shouldBe 4
+    }
+
+    "callback data fits 64 bytes" {
+        cbData(-1001234567890123, 49, 't', 19).toByteArray().size shouldBeLessThan 64
+    }
+
+    "long summary is split" {
+        val e = FlowEnv("af-long")
+        val long = Form("w", listOf(Text("x1", "One"), Text("x2", "Two"), Text("x3", "Three")))
+        e.group(CHAT2, long)
+        e.flow.onJoinRequest(CHAT2, U, U_CHAT, ann, "en")
+        val before = e.toUser().size
+        repeat(3) { e.say("x".repeat(4000)) }
+        val summary = e.toUser().drop(before + 2) // two questions after the first answer
+        summary.size shouldBeGreaterThanOrEqual 3
+        summary.forEach { it.text.length shouldBeLessThanOrEqual SUMMARY_CHUNK }
+        summary.dropLast(1).forEach { it.buttons.shouldBeEmpty() }
+        summary.last().buttons.flatten().map { it.data } shouldBe listOf("f|$CHAT2|3|S|0", "f|$CHAT2|3|R|0")
+        summary.joinToString("") { it.text }.count { it == 'x' } shouldBe 12000
+    }
+
+    "repeat join request" {
+        val e = FlowEnv("af-repeat")
+        e.join(); e.fillTo(2)
+        e.join()
+        e.session()!!.step shouldBe 0
+        e.session()!!.state.answers shouldBe emptyMap()
+        e.fillTo(7); e.press('S')
+        val sent = e.tg.sent.size
+        e.join()
+        e.session().shouldBeNull()
+        e.tg.sent.size shouldBe sent
+    }
+
+    "touched_at updates on accepted interaction" {
+        val e = FlowEnv("af-touch")
+        e.join()
+        e.clock.now = e.clock.now.plusSeconds(60)
+        e.press('p', 0)
+        e.session()!!.touchedAt shouldBe e.clock.now
+    }
+})
