@@ -17,11 +17,11 @@ private val expectedArgs: Map<T, Array<Any>> = mapOf(
     T.REVIEW_UNREACHABLE to arrayOf("Bob"),
 )
 
-class VendeliTgTest : StringSpec({
+class TelegramTest : StringSpec({
     "send is plain text with inline keyboard" {
         val calls = mutableListOf<Call>()
-        val tg = VendeliTg(recordingBot(calls))
-        tg.send(5, "<b>a_b*</b>", listOf(listOf(Button("Yes", "f|-100|0|p|0")))) shouldBe Sent.Ok(1)
+        val bot = recordingBot(calls)
+        bot.sendText(5, "<b>a_b*</b>", listOf(listOf(Button("Yes", "f|-100|0|p|0")))) shouldBe Sent.Ok(1)
         calls.single().run {
             path shouldBe "sendMessage"
             body shouldContain "\"<b>a_b*</b>\""
@@ -30,10 +30,10 @@ class VendeliTgTest : StringSpec({
         }
     }
     "403 maps to Forbidden" {
-        VendeliTg(failingBot(403, "Forbidden: bot was blocked by the user")).send(5, "x") shouldBe Sent.Forbidden
+        failingBot(403, "Forbidden: bot was blocked by the user").sendText(5, "x") shouldBe Sent.Forbidden
     }
     "other failure maps to Failed" {
-        VendeliTg(failingBot(400, "Bad Request: chat not found")).send(5, "x") shouldBe Sent.Failed
+        failingBot(400, "Bad Request: chat not found").sendText(5, "x") shouldBe Sent.Failed
     }
     "approve maps errors" {
         listOf(
@@ -41,39 +41,39 @@ class VendeliTgTest : StringSpec({
             "Bad Request: USER_ALREADY_PARTICIPANT" to Decision.GONE,
             "Internal Server Error" to Decision.TRANSIENT,
         ).forEach { (d, r) ->
-            VendeliTg(failingBot(400, d)).approve(-100, 5) shouldBe r
-            VendeliTg(failingBot(400, d)).decline(-100, 5) shouldBe r
+            failingBot(400, d).approveJoin(-100, 5) shouldBe r
+            failingBot(400, d).declineJoin(-100, 5) shouldBe r
         }
     }
     "approve and decline succeed" {
         val calls = mutableListOf<Call>()
-        val tg = VendeliTg(recordingBot(calls))
-        tg.approve(-100, 5) shouldBe Decision.OK
-        tg.decline(-100, 5) shouldBe Decision.OK
+        val bot = recordingBot(calls)
+        bot.approveJoin(-100, 5) shouldBe Decision.OK
+        bot.declineJoin(-100, 5) shouldBe Decision.OK
         calls.map { it.path } shouldBe listOf("approveChatJoinRequest", "declineChatJoinRequest")
     }
     "edit, answer and document go out" {
         val calls = mutableListOf<Call>()
-        val tg = VendeliTg(recordingBot(calls))
-        tg.edit(5, 12, "t")
-        tg.answer("cb1", "hi", alert = true)
-        tg.sendDocument(5, "x.csv", "a,b".toByteArray()) shouldBe Sent.Ok(1)
+        val bot = recordingBot(calls)
+        bot.editText(5, 12, "t")
+        bot.answerCallback("cb1", "hi", alert = true)
+        bot.sendFile(5, "x.csv", "a,b".toByteArray()) shouldBe Sent.Ok(1)
         calls.map { it.path } shouldBe listOf("editMessageText", "answerCallbackQuery", "sendDocument")
         calls[1].body shouldContain "\"show_alert\":true"
     }
     "keyboard is exactly one array per row" {
         val calls = mutableListOf<Call>()
-        VendeliTg(recordingBot(calls)).send(5, "x", listOf(listOf(Button("A", "a"), Button("B", "b")), listOf(Button("C", "c"))))
+        recordingBot(calls).sendText(5, "x", listOf(listOf(Button("A", "a"), Button("B", "b")), listOf(Button("C", "c"))))
         calls.single().body shouldContain """"inline_keyboard":[[{"text":"A","callback_data":"a"},{"text":"B","callback_data":"b"}],[{"text":"C","callback_data":"c"}]]"""
     }
     "answer sends no chat id" {
         val calls = mutableListOf<Call>()
-        VendeliTg(recordingBot(calls)).answer("cb1", "hi")
+        recordingBot(calls).answerCallback("cb1", "hi")
         calls.single().body shouldNotContain "chat_id"
         calls.single().body shouldContain "callback_query_id"
     }
     "failed admins lookup is null" {
-        VendeliTg(failingBot(400, "Bad Request")).admins(-100) shouldBe null
+        failingBot(400, "Bad Request").chatAdmins(-100) shouldBe null
     }
     "every T has en and ru" {
         T.entries.forEach {

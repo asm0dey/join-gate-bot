@@ -12,14 +12,14 @@ private val ann = Profile("Ann", "ann")
 private class PurgeEnv(name: String) {
     val db = testDb(name)
     val clock = TestClock()
-    val tg = FakeTg()
+    val tg = FakeTelegram()
     val groups = GroupRepo(db)
     val forms = FormRepo(db)
     val sessions = SessionRepo(db, testCrypto())
     val subs = SubmissionRepo(db, testCrypto())
     val users = BotUserRepo(db)
-    val review = ReviewService(subs, FormRepo(db), groups, users, AdminCheck(tg, clock), tg, clock)
-    val flow = ApplicantFlow(groups, FormRepo(db), sessions, subs, users, review, tg, clock)
+    val review = ReviewService(subs, FormRepo(db), groups, users, AdminCheck(tg.bot, clock), tg.bot, clock)
+    val flow = ApplicantFlow(groups, FormRepo(db), sessions, subs, users, review, tg.bot, clock)
     val purge = Purge(sessions, flow, subs, groups, clock)
 
     fun session(user: Long, chat: Long, age: Duration, step: Int = 0) =

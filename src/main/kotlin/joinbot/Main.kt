@@ -59,18 +59,17 @@ suspend fun main(): Unit = coroutineScope {
             retryDelay = 2_000L
             retryStrategy = retryOnTooManyRequests()
         }
-        // Failures come back as Response.Failure; VendeliTg classifies them.
+        // Failures come back as Response.Failure; Telegram.kt classifies them.
         throwExOnActionsFailure = false
     }
-    val tg = VendeliTg(bot)
-    val admins = AdminCheck(tg, clock)
-    val review = ReviewService(subs, forms, groups, users, admins, tg, clock)
-    val flow = ApplicantFlow(groups, forms, sessions, subs, users, review, tg, clock)
+    val admins = AdminCheck(bot, clock)
+    val review = ReviewService(subs, forms, groups, users, admins, bot, clock)
+    val flow = ApplicantFlow(groups, forms, sessions, subs, users, review, bot, clock)
     Registry.flow = flow
     Registry.review = review
-    Registry.registry = GroupRegistry(groups, sessions, subs, users, review, flow, tg)
+    Registry.registry = GroupRegistry(groups, sessions, subs, users, review, flow, bot)
     Registry.users = users
-    Registry.tg = tg
+    Registry.bot = bot
 
     when (val v = validateBotToken(bot)) {
         TokenValidation.Rejected -> {
@@ -100,7 +99,7 @@ suspend fun main(): Unit = coroutineScope {
     menuButton(miniAppUrl)
 
     if (miniAppUrl != null) {
-        val deps = MiniAppDeps(InitDataVerifier(cfg.botToken)::verify, groups, forms, subs, admins, tg, users, clock)
+        val deps = MiniAppDeps(InitDataVerifier(cfg.botToken)::verify, groups, forms, subs, admins, bot, users, clock)
         // A bind failure must not take polling down with it, nor leave a menu button pointing at nothing.
         try {
             startMiniApp(cfg, deps)

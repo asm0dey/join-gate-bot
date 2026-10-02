@@ -39,7 +39,7 @@ suspend fun start(user: User, update: ProcessedUpdate): Unit = guarded("start") 
     Registry.users.started(user.id, lang)
     if (Registry.flow.onStart(user.id, lang)) return
     if (Registry.review.deliverPending(user.id) > 0) return
-    Registry.tg.send(user.id, Texts.t(lang, T.HOW_TO_JOIN))
+    Registry.bot.sendText(user.id, Texts.t(lang, T.HOW_TO_JOIN))
 }
 
 @UpdateHandler([UpdateType.CHAT_JOIN_REQUEST])
@@ -76,7 +76,7 @@ suspend fun fallback(update: ProcessedUpdate): Unit = guarded("update") {
             if (!update.isPrivate()) return
             val u = update.user
             if (!Registry.flow.onMessage(u.id, update.message.text, u.languageCode)) {
-                Registry.tg.send(u.id, Texts.t(u.languageCode, T.HOW_TO_JOIN))
+                Registry.bot.sendText(u.id, Texts.t(u.languageCode, T.HOW_TO_JOIN))
             }
         }
         is CallbackQueryUpdate -> {
@@ -87,7 +87,7 @@ suspend fun fallback(update: ProcessedUpdate): Unit = guarded("update") {
                 data.startsWith("f|") && messageId != null ->
                     Registry.flow.onCallback(q.from.id, q.id, data, q.from.languageCode, messageId)
                 data.startsWith("r|") -> Registry.review.onDecision(q.from.id, q.id, data)
-                else -> Registry.tg.answer(q.id)
+                else -> Registry.bot.answerCallback(q.id)
             }
         }
         else -> {} // join requests and bot-status updates also land here after their @UpdateHandler

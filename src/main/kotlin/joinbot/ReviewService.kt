@@ -1,5 +1,6 @@
 package joinbot
 
+import eu.vendeli.tgbot.TelegramBot
 import java.time.Clock
 import java.time.Duration
 
@@ -15,7 +16,7 @@ fun Submission.partial(form: Form?) = answers == null || form?.fields.orEmpty().
 /** Fans a submission out to the group's deciders and settles Approve/Reject clicks; the first click wins (spec C). */
 class ReviewService(
     private val subs: SubmissionRepo, private val forms: FormRepo, private val groups: GroupRepo, private val users: BotUserRepo,
-    private val admins: AdminCheck, private val tg: Tg, private val clock: Clock,
+    private val admins: AdminCheck, private val bot: TelegramBot, private val clock: Clock,
 ) {
     suspend fun submit(submissionId: Long) {
         val s = subs.get(submissionId) ?: return
@@ -28,13 +29,13 @@ class ReviewService(
         if (reached > 0) return
         val now = clock.instant()
         if (g.nudgedAt != null && now < g.nudgedAt.plus(NUDGE_EVERY)) return
-        tg.send(s.chatId, Texts.t(null, T.NUDGE, subs.list(s.chatId, Status.PENDING).size))
+        bot.sendText(s.chatId, Texts.t(null, T.NUDGE, subs.list(s.chatId, Status.PENDING).size))
         groups.markNudged(s.chatId, now)
     }
 
     suspend fun onDecision(adminId: Long, callbackId: String, data: String) {
         val lang = users.lang(adminId)
-        suspend fun alert(key: T, vararg args: Any) = tg.answer(callbackId, Texts.t(lang, key, *args), alert = true)
+        suspend fun alert(key: T, vararg args: Any) = bot.answerCallback(callbackId, Texts.t(lang, key, *args), alert = true)
 
         val parts = data.split('|')
         val status = when (parts.getOrNull(2)) { "a" -> Status.APPROVED; "j" -> Status.REJECTED; else -> null }
@@ -46,7 +47,7 @@ class ReviewService(
         // The conditional UPDATE is the only arbiter between simultaneous clicks.
         suspend fun alreadyDecided() = alert(T.ALREADY_DECIDED, deciderName(s.chatId, subs.get(s.id)?.decidedBy, lang))
         if (!subs.decide(s.id, status, adminId, clock.instant())) return alreadyDecided()
-        val result = if (status == Status.APPROVED) tg.approve(s.chatId, s.userId) else tg.decline(s.chatId, s.userId)
+        val result = if (status == Status.APPROVED) bot.approveJoin(s.chatId, s.userId) else bot.declineJoin(s.chatId, s.userId)
         val final = when (result) {
             Decision.OK -> status
             Decision.TRANSIENT -> { subs.revert(s.id, status, adminId); return alert(T.TRY_AGAIN) }
@@ -56,7 +57,7 @@ class ReviewService(
                 Status.WITHDRAWN
             }
         }
-        tg.answer(callbackId)
+        bot.answerCallback(callbackId)
 
         val form = s.formVersion?.let { forms.version(s.chatId, it) }
         for ((copyAdmin, messageId) in subs.reviewMessages(s.id)) {
@@ -66,11 +67,11 @@ class ReviewService(
                 Status.REJECTED -> Texts.t(l, T.DECIDED_BY_REJECTED, deciderName(s.chatId, adminId, l))
                 else -> Texts.t(l, T.WITHDRAWN)
             }
-            tg.edit(copyAdmin, messageId, fit(renderReview(s, form, l), "\n\n$outcome"))
+            bot.editText(copyAdmin, messageId, fit(renderReview(s, form, l), "\n\n$outcome"))
         }
         if (final == Status.WITHDRAWN) return
         val userLang = users.lang(s.userId)
-        val sent = tg.send(s.userId, Texts.t(userLang, if (final == Status.APPROVED) T.APPROVED_USER else T.REJECTED_USER))
+        val sent = bot.sendText(s.userId, Texts.t(userLang, if (final == Status.APPROVED) T.APPROVED_USER else T.REJECTED_USER))
         if (sent == Sent.Forbidden) users.forbidden(s.userId)
     }
 
@@ -93,7 +94,7 @@ class ReviewService(
             val form = s.formVersion?.let { forms.version(chatId, it) }
             for ((adminId, messageId) in subs.reviewMessages(s.id)) {
                 val l = users.lang(adminId)
-                tg.edit(adminId, messageId, fit(renderReview(s, form, l), "\n\n" + Texts.t(l, T.REVIEW_SUSPENDED)))
+                bot.editText(adminId, messageId, fit(renderReview(s, form, l), "\n\n" + Texts.t(l, T.REVIEW_SUSPENDED)))
             }
         }
     }
@@ -119,7 +120,7 @@ class ReviewService(
     private suspend fun sendCopy(s: Submission, form: Form?, adminId: Long): Boolean {
         val lang = users.lang(adminId)
         val buttons = listOf(listOf(Button(Texts.t(lang, T.APPROVE), "r|${s.id}|a"), Button(Texts.t(lang, T.REJECT), "r|${s.id}|j")))
-        return when (val r = tg.send(adminId, fit(renderReview(s, form, lang)), buttons)) {
+        return when (val r = bot.sendText(adminId, fit(renderReview(s, form, lang)), buttons)) {
             is Sent.Ok -> { subs.addReviewMessage(s.id, adminId, r.messageId); true }
             Sent.Forbidden -> { users.forbidden(adminId); false }
             Sent.Failed -> false

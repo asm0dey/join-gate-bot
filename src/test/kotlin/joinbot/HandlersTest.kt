@@ -42,21 +42,21 @@ private fun joinJson(from: String) =
 private class HandlerEnv(name: String) {
     val db = testDb(name)
     val clock = TestClock()
-    val tg = FakeTg()
+    val tg = FakeTelegram()
     val groups = GroupRepo(db)
     val forms = FormRepo(db)
     val subs = SubmissionRepo(db, testCrypto())
     val users = BotUserRepo(db)
-    val review = ReviewService(subs, forms, groups, users, AdminCheck(tg, clock), tg, clock)
+    val review = ReviewService(subs, forms, groups, users, AdminCheck(tg.bot, clock), tg.bot, clock)
     val sessions = SessionRepo(db, testCrypto())
-    val flow = ApplicantFlow(groups, forms, sessions, subs, users, review, tg, clock)
+    val flow = ApplicantFlow(groups, forms, sessions, subs, users, review, tg.bot, clock)
 
     init {
-        Registry.tg = tg
+        Registry.bot = tg.bot
         Registry.users = users
         Registry.review = review
         Registry.flow = flow
-        Registry.registry = GroupRegistry(groups, sessions, subs, users, review, flow, tg)
+        Registry.registry = GroupRegistry(groups, sessions, subs, users, review, flow, tg.bot)
         groups.upsert(CHAT, "Club", true)
         forms.save(CHAT, Form("Hi", listOf(Text("q1", "Why?"), Text("q2", "Where?"))), 0, 9, clock.instant())
         tg.adminsOf[CHAT] = listOf(Admin(ADMIN, "Boss", false, true))

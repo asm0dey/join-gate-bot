@@ -1,5 +1,6 @@
 package joinbot
 
+import eu.vendeli.tgbot.TelegramBot
 import java.time.Clock
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
@@ -19,7 +20,7 @@ fun cbData(chatId: Long, step: Int, action: Char, idx: Int = 0) = "f|$chatId|$st
  */
 class ApplicantFlow(
     private val groups: GroupRepo, private val forms: FormRepo, private val sessions: SessionRepo, private val subs: SubmissionRepo,
-    private val users: BotUserRepo, private val review: ReviewService, private val tg: Tg, private val clock: Clock,
+    private val users: BotUserRepo, private val review: ReviewService, private val bot: TelegramBot, private val clock: Clock,
 ) {
     // ponytail: one Mutex per user ever seen, never evicted; evict idle entries if memory matters
     private val locks = ConcurrentHashMap<Long, Mutex>()
@@ -59,7 +60,7 @@ class ApplicantFlow(
         locked(userId) { callback(userId, callbackId, data, lang, messageId) }
 
     private suspend fun callback(userId: Long, callbackId: String, data: String, lang: String?, messageId: Long) {
-        suspend fun stale() = tg.answer(callbackId, Texts.t(lang, T.STALE_BUTTON), alert = true)
+        suspend fun stale() = bot.answerCallback(callbackId, Texts.t(lang, T.STALE_BUTTON), alert = true)
         val p = data.split('|')
         val chatId = p.getOrNull(1)?.toLongOrNull(); val step = p.getOrNull(2)?.toIntOrNull()
         val action = p.getOrNull(3)?.singleOrNull(); val idx = p.getOrNull(4)?.toIntOrNull()
@@ -69,8 +70,8 @@ class ApplicantFlow(
 
         if (action == 'S' || action == 'R') {
             if (step != form.fields.size) return stale()
-            tg.answer(callbackId)
-            tg.edit(userId, messageId, summary(s, form).last())
+            bot.answerCallback(callbackId)
+            bot.editText(userId, messageId, summary(s, form).last())
             if (action == 'S') submit(s, form) else if (!begin(s, userId)) startNext(userId)
             return
         }
@@ -82,19 +83,19 @@ class ApplicantFlow(
             action == 's' -> Input.Skip
             action == 'o' && field is Radio && field.other -> {
                 put(s.copy(state = s.state.copy(otherMode = true)))
-                tg.answer(callbackId); tg.edit(userId, messageId, field.prompt)
-                tg.send(userId, Texts.t(s.lang, T.TYPE_OTHER))
+                bot.answerCallback(callbackId); bot.editText(userId, messageId, field.prompt)
+                bot.sendText(userId, Texts.t(s.lang, T.TYPE_OTHER))
                 return
             }
             action == 't' && field is Multi && idx in field.options.indices -> {
                 val picks = s.state.picks.let { if (idx in it) it - idx else it + idx }
                 val next = s.copy(state = s.state.copy(picks = picks))
                 put(next)
-                tg.answer(callbackId); tg.edit(userId, messageId, field.prompt, keyboard(next, field))
+                bot.answerCallback(callbackId); bot.editText(userId, messageId, field.prompt, keyboard(next, field))
                 return
             }
             action == 'n' && field is Consent -> {
-                tg.answer(callbackId); tg.edit(userId, messageId, field.prompt)
+                bot.answerCallback(callbackId); bot.editText(userId, messageId, field.prompt)
                 declineUnlocked(s, T.DECLINED_CONSENT)
                 startNext(userId)
                 return
@@ -102,10 +103,10 @@ class ApplicantFlow(
             else -> return stale()
         }
         when (val c = validate(field, input)) {
-            is Check.Ok -> { tg.answer(callbackId); tg.edit(userId, messageId, field.prompt); advance(s, form, c.value) }
+            is Check.Ok -> { bot.answerCallback(callbackId); bot.editText(userId, messageId, field.prompt); advance(s, form, c.value) }
             // a skip on a required field or an unknown option only comes from a forged button
             is Check.Invalid -> if (c.reason == Reason.TOO_FEW || c.reason == Reason.TOO_MANY)
-                tg.answer(callbackId, Texts.t(s.lang, c.reason.text()), alert = true) else stale()
+                bot.answerCallback(callbackId, Texts.t(s.lang, c.reason.text()), alert = true) else stale()
         }
     }
 
@@ -127,13 +128,13 @@ class ApplicantFlow(
     private suspend fun declineUnlocked(s: Session, key: T) {
         sessions.delete(s.userId, s.chatId)
         try {
-            tg.decline(s.chatId, s.userId)
+            bot.declineJoin(s.chatId, s.userId)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             log.warn("decline failed: {}", e.javaClass.simpleName)
         }
-        tg.send(s.userId, Texts.t(s.lang, key))
+        bot.sendText(s.userId, Texts.t(s.lang, key))
     }
 
     /** The group can no longer take requests: closes every form for [chatId] and tells its applicants. Idempotent. */
@@ -142,7 +143,7 @@ class ApplicantFlow(
             val s = sessions.get(userId, chatId) ?: return@locked
             sessions.delete(userId, chatId)
             try {
-                tg.send(userId, Texts.t(s.lang ?: users.lang(userId), T.GROUP_GONE))
+                bot.sendText(userId, Texts.t(s.lang ?: users.lang(userId), T.GROUP_GONE))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -172,7 +173,7 @@ class ApplicantFlow(
         val welcome = listOfNotNull(form.welcome.takeIf { it.isNotBlank() },
             Texts.t(s.lang, T.WELCOME_SKIP).takeIf { form.fields.any { !it.required } }).joinToString("\n\n")
         if (welcome.isEmpty()) return ask(start, form, dest, firstContact = true)
-        val sent = tg.send(dest, welcome)
+        val sent = bot.sendText(dest, welcome)
         if (sent !is Sent.Ok) {
             unreachable(start, sent)
             return false
@@ -205,7 +206,7 @@ class ApplicantFlow(
     }
 
     private suspend fun reask(s: Session, form: Form, reason: Reason): Boolean {
-        tg.send(s.userId, Texts.t(s.lang, reason.text()))
+        bot.sendText(s.userId, Texts.t(s.lang, reason.text()))
         if (!ask(s, form)) startNext(s.userId)
         return true
     }
@@ -220,7 +221,7 @@ class ApplicantFlow(
         val answers = form.fields.associate { it.id to s.state.answers[it.id].orEmpty() }
         val id = subs.create(s.chatId, s.userId, s.formVersion, s.state.profile, answers, Status.PENDING, clock.instant())
         sessions.delete(s.userId, s.chatId)
-        tg.send(s.userId, Texts.t(s.lang, T.SUBMITTED))
+        bot.sendText(s.userId, Texts.t(s.lang, T.SUBMITTED))
         review.submit(id)
         startNext(s.userId)
     }
@@ -237,7 +238,7 @@ class ApplicantFlow(
                 (c.last() to listOf(listOf(button(s, T.SUBMIT, 'S'), button(s, T.START_OVER, 'R'))))
         }
         for ((i, m) in messages.withIndex()) {
-            val sent = tg.send(dest, m.first, m.second)
+            val sent = bot.sendText(dest, m.first, m.second)
             if (sent == Sent.Forbidden || (firstContact && i == 0 && sent !is Sent.Ok)) {
                 unreachable(s, sent)
                 return false

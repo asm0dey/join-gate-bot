@@ -12,15 +12,15 @@ import kotlinx.coroutines.launch
 private class RegEnv(name: String) {
     val db = testDb(name)
     val clock = TestClock()
-    val tg = FakeTg()
+    val tg = FakeTelegram()
     val groups = GroupRepo(db)
     val forms = FormRepo(db)
     val sessions = SessionRepo(db, testCrypto())
     val subs = SubmissionRepo(db, testCrypto())
     val users = BotUserRepo(db)
-    val review = ReviewService(subs, forms, groups, users, AdminCheck(tg, clock), tg, clock)
-    val flow = ApplicantFlow(groups, forms, sessions, subs, users, review, tg, clock)
-    val reg = GroupRegistry(groups, sessions, subs, users, review, flow, tg)
+    val review = ReviewService(subs, forms, groups, users, AdminCheck(tg.bot, clock), tg.bot, clock)
+    val flow = ApplicantFlow(groups, forms, sessions, subs, users, review, tg.bot, clock)
+    val reg = GroupRegistry(groups, sessions, subs, users, review, flow, tg.bot)
 
     /** Group -100 with decider 1 who started the bot. */
     fun group(active: Boolean) {

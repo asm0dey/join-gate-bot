@@ -1,5 +1,6 @@
 package joinbot
 
+import eu.vendeli.tgbot.TelegramBot
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -14,7 +15,7 @@ import kotlinx.serialization.Serializable
 
 class MiniAppDeps(
     val verify: (String) -> Viewer?, val groups: GroupRepo, val forms: FormRepo, val subs: SubmissionRepo,
-    val admins: AdminCheck, val tg: Tg, val users: BotUserRepo, val clock: Clock,
+    val admins: AdminCheck, val bot: TelegramBot, val users: BotUserRepo, val clock: Clock,
 )
 
 @Serializable data class GroupDto(val id: Long, val title: String, val hasForm: Boolean, val retentionDays: Int, val active: Boolean)
@@ -103,7 +104,7 @@ fun Route.api(d: MiniAppDeps) {
     post("/groups/{id}/export") {
         inGroup(d, true) { v, g ->
             val csv = toCsv(d.forms.all(g.chatId), d.subs.list(g.chatId, null)).toByteArray()
-            when (d.tg.sendDocument(v.userId, exportFileName(g.title), csv)) {
+            when (d.bot.sendFile(v.userId, exportFileName(g.title), csv)) {
                 is Sent.Ok -> call.respond(HttpStatusCode.Accepted)
                 Sent.Forbidden -> call.respond(HttpStatusCode.Conflict) // the user must start the bot first
                 Sent.Failed -> call.respond(HttpStatusCode.BadGateway)

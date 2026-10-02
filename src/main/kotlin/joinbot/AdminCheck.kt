@@ -1,12 +1,13 @@
 package joinbot
 
+import eu.vendeli.tgbot.TelegramBot
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
 /** Who may review join requests: non-bot admins with the invite right. Admin lists are cached for [ttl]. */
-class AdminCheck(private val tg: Tg, private val clock: Clock, private val ttl: Duration = Duration.ofSeconds(60)) {
+class AdminCheck(private val bot: TelegramBot, private val clock: Clock, private val ttl: Duration = Duration.ofSeconds(60)) {
     private val cache = ConcurrentHashMap<Long, Pair<Instant, List<Admin>>>()
 
     suspend fun canDecide(chatId: Long, userId: Long, fresh: Boolean = false): Boolean = userId in load(chatId, fresh).deciders()
@@ -22,7 +23,7 @@ class AdminCheck(private val tg: Tg, private val clock: Clock, private val ttl: 
     private suspend fun load(chatId: Long, fresh: Boolean): List<Admin> {
         val now = clock.instant()
         if (!fresh) cache[chatId]?.takeIf { now < it.first.plus(ttl) }?.let { return it.second }
-        val admins = tg.admins(chatId) ?: return emptyList()
+        val admins = bot.chatAdmins(chatId) ?: return emptyList()
         cache[chatId] = now to admins
         return admins
     }

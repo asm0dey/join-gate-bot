@@ -20,12 +20,12 @@ private fun admin(id: Long, name: String = "A$id", canInvite: Boolean = true) = 
 private class Env(name: String) {
     val db = testDb(name)
     val clock = TestClock()
-    val tg = FakeTg()
+    val tg = FakeTelegram()
     val groups = GroupRepo(db)
     val forms = FormRepo(db)
     val subs = SubmissionRepo(db, testCrypto())
     val users = BotUserRepo(db)
-    val review = ReviewService(subs, forms, groups, users, AdminCheck(tg, clock), tg, clock)
+    val review = ReviewService(subs, forms, groups, users, AdminCheck(tg.bot, clock), tg.bot, clock)
 
     fun group(chat: Long = CHAT, vararg admins: Admin) {
         groups.upsert(chat, "Club$chat", true)

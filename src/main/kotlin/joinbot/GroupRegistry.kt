@@ -1,5 +1,6 @@
 package joinbot
 
+import eu.vendeli.tgbot.TelegramBot
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -8,7 +9,7 @@ import org.slf4j.LoggerFactory
 /** Reacts to the bot being added, promoted, demoted or removed in a group, and to a group becoming a supergroup. */
 class GroupRegistry(
     private val groups: GroupRepo, private val sessions: SessionRepo, private val subs: SubmissionRepo, private val users: BotUserRepo,
-    private val review: ReviewService, private val flow: ApplicantFlow, private val tg: Tg,
+    private val review: ReviewService, private val flow: ApplicantFlow, private val bot: TelegramBot,
 ) {
     // ponytail: global lock, bot-status changes are rare; per-chat locks if that changes
     private val lock = Mutex()
@@ -22,7 +23,7 @@ class GroupRegistry(
             return@withLock
         }
         // every my_chat_member update is a real admin action, so the reminder repeats
-        if (isAdmin) tg.send(chatId, Texts.t(null, T.NEEDS_INVITE_RIGHT))
+        if (isAdmin) bot.sendText(chatId, Texts.t(null, T.NEEDS_INVITE_RIGHT))
         if (was == true) handOff(chatId)
         // on every inactive update, not only the transition: idempotent, and catches sessions left in a stored-inactive group
         try {
@@ -44,7 +45,7 @@ class GroupRegistry(
         val pending = subs.list(chatId, Status.PENDING)
         for (userId in pending.map { it.userId }.distinct()) {
             try {
-                tg.send(userId, Texts.t(users.lang(userId), T.MANUAL_REVIEW))
+                bot.sendText(userId, Texts.t(users.lang(userId), T.MANUAL_REVIEW))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -52,7 +53,7 @@ class GroupRegistry(
             }
         }
         review.suspendChat(chatId)
-        if (pending.isNotEmpty()) tg.send(chatId, Texts.t(null, T.GROUP_HANDOFF, pending.size))
+        if (pending.isNotEmpty()) bot.sendText(chatId, Texts.t(null, T.GROUP_HANDOFF, pending.size))
     }
 
     private companion object {
