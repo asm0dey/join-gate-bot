@@ -24,19 +24,20 @@ the admin touching Telegram's join-request list.
 | Updates | Long polling; HTTPS only via `MINIAPP_URL` (host-agnostic) | Webhook; baked-in reverse proxy |
 | Reviewers | Admins of the guarded group who have started the bot | Separate admin group; invite-right-only subset |
 | Retention | Keep answers (Tink-encrypted), list + CSV export + per-group auto-purge | Delete after decision; Google Sheets |
-| Build orchestration | SDKMAN pins Java (`.sdkmanrc`); mise pins Bun and defines tasks; Gradle builds only the JVM side; Bun builds `web/` | gradle-bun (Gradle setup is hard); go-task (can't pin tools) |
+| Build tool | Maven (experiment) with `me.kpavlov.ksp.maven:ksp-maven-plugin` for vendeli's KSP; fallback to vendeli's functional DSL if KSP fails under Maven | Gradle (setup is hard) |
+| Build orchestration | SDKMAN pins Java (`.sdkmanrc`); mise pins Bun and defines tasks; Maven builds only the JVM side; Bun builds `web/` | gradle-bun (Gradle setup is hard); go-task (can't pin tools) |
 | Frontend delivery | Served from the filesystem (`WEB_DIR`), not from the jar | Bundled into jar resources |
 
 ## 1. Architecture
 
-One process, one Gradle module, flat package `joinbot`. Libraries follow
+One process, one Maven module, flat package `joinbot`. Libraries follow
 `exchange-bot` (Kotlin 2.4, vendeli 9.6, Ktor CIO, H2 file + Flyway + Exposed,
 Tink, kotest, Svelte 5 + daisyUI), with two departures:
 
 - **Toolchain:** `.sdkmanrc` pins Java (`27.0.0+36-librca`), read by SDKMAN
   auto-env and by mise (`idiomatic_version_file_enable_tools = ["java"]`);
   `mise.toml` pins Bun (`1.4.2`, Renovate bumps it) and is the single entry point: `mise run build`,
-  `mise run test`. Gradle is plain Kotlin/JVM with no bun plugin; Bun builds
+  `mise run test`. Maven builds plain Kotlin/JVM (KSP via `ksp-maven-plugin`); Bun builds
   `web/` into `web/dist` on its own. If Kotlin 2.4 cannot emit JVM 27
   bytecode, run on 27 with `jvmTarget` 25.
 - **Static files:** Ktor serves the SPA from the filesystem,
@@ -228,8 +229,8 @@ ktor-server-test-host — all as in `exchange-bot`.
 
 ## 7. Ops
 
-Dockerfile: a `oven/bun` stage builds `web/dist`, a Gradle stage builds the
-jar, and the runtime stage (hardened distroless Liberica JRE 27 if that tag
+Dockerfile: a `oven/bun` stage builds `web/dist`, a Maven stage builds the
+jar and `target/lib`, and the runtime stage (hardened distroless Liberica JRE 27 if that tag
 exists, else 25; uid 10001; `/app/data` volume) copies the jar plus
 `web/dist` → `/app/web` with `WEB_DIR=/app/web`.
 

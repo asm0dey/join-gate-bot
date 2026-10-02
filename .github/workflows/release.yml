@@ -21,7 +21,11 @@ jobs:
 
       - uses: jdx/mise-action@v5
 
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: actions/cache@v6
+        with:
+          path: ~/.m2/repository
+          key: m2-${{ runner.os }}-${{ hashFiles('pom.xml') }}
+          restore-keys: m2-${{ runner.os }}-
 
       - run: mise run test
 
@@ -30,7 +34,7 @@ jobs:
 
       # `docker/build-push-action`'s `cache-from`/`cache-to: type=gha` below only persists
       # BuildKit's *layer* cache across runs — the `RUN --mount=type=cache` mounts in
-      # Dockerfile (Gradle home, Bun cache) live in BuildKit's separate cache-mount
+      # Dockerfile (Maven repository, Bun cache) live in BuildKit's separate cache-mount
       # store, which `type=gha` does not touch. buildkit-cache-dance bridges that: it copies
       # each mount's content into a plain directory before the build (so actions/cache below
       # can persist it) and back out after (so the next run's mounts start warm). `cache-dir` +
@@ -42,7 +46,7 @@ jobs:
         id: docker-build-cache
         with:
           path: cache-mount
-          key: docker-build-cache-${{ hashFiles('build.gradle.kts', 'gradle/libs.versions.toml', 'web/bun.lock', 'mise.toml') }}
+          key: docker-build-cache-${{ hashFiles('pom.xml', 'web/bun.lock', 'mise.toml') }}
           restore-keys: |
             docker-build-cache-
 

@@ -4,9 +4,9 @@
 
 **Goal:** A multi-group Telegram bot that answers every join request with an admin-defined form in DM and lets any group admin approve or reject it with one click.
 
-**Architecture:** One Kotlin process: vendeli long polling plus a Ktor CIO Mini App server, both calling plain service classes that talk to Telegram only through a small `Tg` port and to H2 through Exposed repositories. Bun builds the Svelte admin UI into `web/dist` outside Gradle; Ktor serves it from the filesystem. SDKMAN pins Java, mise pins Bun and is the single entry point (`mise run build`).
+**Architecture:** One Kotlin process: vendeli long polling plus a Ktor CIO Mini App server, both calling plain service classes that talk to Telegram only through a small `Tg` port and to H2 through Exposed repositories. Bun builds the Svelte admin UI into `web/dist` outside Maven; Ktor serves it from the filesystem. SDKMAN pins Java, mise pins Bun and is the single entry point (`mise run build`).
 
-**Tech Stack:** Kotlin 2.4.20, Java 27 (Liberica, via SDKMAN `.sdkmanrc`), `eu.vendeli:telegram-bot` 9.6.0 + ktnip KSP, Ktor 3.6 (CIO server and client), H2 2.5 (`MODE=PostgreSQL`, file cipher) + Flyway 13.8 + Exposed 1.5, Google Tink 1.23, tinylog 2.8, kotest 6.2; web: Bun 1.4.2, Svelte 5, Vite 8, Tailwind 4 + daisyUI 5.
+**Tech Stack:** Maven 3.10 (wrapper) + `me.kpavlov.ksp.maven:ksp-maven-plugin` 0.4.7 for KSP, Kotlin 2.4.20, Java 27 (Liberica, via SDKMAN `.sdkmanrc`), `eu.vendeli:telegram-bot` 9.6.0 + ktnip KSP, Ktor 3.6 (CIO server and client), H2 2.5 (`MODE=PostgreSQL`, file cipher) + Flyway 13.8 + Exposed 1.5, Google Tink 1.23, tinylog 2.8, kotest 6.2; web: Bun 1.4.2, Svelte 5, Vite 8, Tailwind 4 + daisyUI 5.
 
 **Spec:** `docs/superpowers/specs/2026-10-02-join-form-bot-design.md`
 
@@ -14,9 +14,9 @@
 
 ## Global Constraints
 
-- Package `joinbot`, one Gradle module, sources in `src/main/kotlin/joinbot/`, tests in `src/test/kotlin/joinbot/`.
+- Package `joinbot`, one Maven module (`pom.xml`, artifact `join-gate-bot`), sources in `src/main/kotlin/joinbot/`, tests in `src/test/kotlin/joinbot/`.
 - `.sdkmanrc` pins `java=27.0.0+36-librca`; `mise.toml` pins `bun = "1.4.2"`; mise reads `.sdkmanrc` too (`idiomatic_version_file_enable_tools = ["java"]`), so `mise-action` alone sets up CI; `mise run build` is what CI runs and must stay green after every task.
-- No gradle-bun plugin, no shadow plugin; the Gradle `application` plugin's `installDist` is the image's input.
+- Maven is an experiment (recorded in precedent): no fat jar; `package` writes `target/join-gate-bot.jar` plus `target/lib/*.jar` (dependency plugin), which is the image's input. Versions are `<properties>` in `pom.xml`, copied from exchange-bot's `gradle/libs.versions.toml`.
 - H2 URL `jdbc:h2:file:<DB_PATH>;CIPHER=AES;MODE=PostgreSQL`; Flyway owns the schema; tests use in-memory H2 in PG mode.
 - 🔒 columns are Tink AEAD (`BYTEA`) with associated data `"<table>|<row key>"`, e.g. `"submission|42"`, `"form_session|<user>|<chat>"`.
 - Never log user ids, chat ids, names, usernames, answers, or exception messages; only counts, outcome labels and exception class names. Copy `tinylog.properties` from exchange-bot.
@@ -37,11 +37,11 @@
 
 ---
 
-### Task 1: Toolchain and Gradle skeleton
+### Task 1: Toolchain and Maven skeleton
 
 **Files:**
-- Create: `mise.toml` (`.sdkmanrc` already exists), `settings.gradle.kts`, `build.gradle.kts`, `gradle/libs.versions.toml`, `gradlew`, `gradlew.bat`, `gradle/wrapper/*`, `.gitignore`
-- Create: `src/main/kotlin/joinbot/Config.kt`, `src/main/kotlin/joinbot/Main.kt`, `src/main/resources/tinylog.properties`
+- Create: `mise.toml` (`.sdkmanrc` already exists), `pom.xml`, `mvnw`, `mvnw.cmd`, `.mvn/wrapper/*`, `.gitignore`
+- Create: `src/main/kotlin/joinbot/Config.kt`, `src/main/kotlin/joinbot/Main.kt`, `src/main/kotlin/joinbot/Handlers.kt` (one stub handler, proves KSP), `src/main/resources/tinylog.properties`
 - Test: `src/test/kotlin/joinbot/ConfigTest.kt`
 
 **Interfaces:**
@@ -63,27 +63,37 @@ idiomatic_version_file_enable_tools = ["java"]   # take Java from .sdkmanrc
 [tools]
 bun = "1.4.2"
 
+[tasks."backend:test"]
+run = "./mvnw -B test"
+
+[tasks."backend:build"]
+run = "./mvnw -B verify"        # compile, KSP, tests, jar + target/lib
+
 [tasks.test]
-run = "./gradlew test"
+depends = ["backend:test"]
 
 [tasks.build]
-run = "./gradlew build"
+depends = ["backend:build"]
 ```
 
-Task 13 adds the `web:*` tasks and makes `build`/`test` depend on them.
+Task 12 adds the `web:*` tasks to both `depends` lists.
 
-- [ ] **Step 2: Generate the wrapper and check that Gradle runs on Java 27**
+- [ ] **Step 2: Generate the wrapper**
 
-Run: `mise install && mise ls --current java && mise x gradle@9.8.0 -- gradle wrapper --gradle-version 9.8.0 && ./gradlew --version`
-Expected: `java liberica-27.0.0+36 …/.sdkmanrc`, then `Gradle 9.8.0` and `Launcher JVM: 27...`. If Gradle refuses to run on 27, set `java=25.0.1-librca` in `.sdkmanrc` and keep the `jvmToolchain(27)` from Step 3 (the foojay resolver fetches 27 for compilation and tests).
+Run: `mise install && mise ls --current java && mise x maven@3.10.0 -- mvn -N -q wrapper:wrapper -Dmaven=3.10.0 && ./mvnw -v`
+Expected: `java liberica-27.0.0+36 …/.sdkmanrc`, then `Apache Maven 3.10.0` and `Java version: 27`.
 
-- [ ] **Step 3: Write the Gradle build**
+- [ ] **Step 3: Write `pom.xml`**
 
-- `settings.gradle.kts`: the foojay resolver convention plugin `1.0.0`; `rootProject.name = "join-gate-bot"`.
-- `gradle/libs.versions.toml`: copy from exchange-bot, then remove `dbscheduler`, `shadow`, `bun`, `bun-gradle` and their library/plugin entries.
-- `build.gradle.kts`: plugins `kotlin.jvm`, `kotlin.serialization`, `ksp`, `application`. Dependencies are exchange-bot's list minus `db.scheduler`. `kotlin { jvmToolchain(27) }`. `application.mainClass = "joinbot.MainKt"`. `tasks.test { useJUnitPlatform() }`. Add `tasks.register<JavaExec>("keygen")` running `joinbot.KeygenMainKt` (the class arrives in Task 2).
-- If Kotlin 2.4.20 rejects JVM target 27 at compile time, add `kotlin { compilerOptions { jvmTarget = JvmTarget.JVM_25 } }` and `java { targetCompatibility = JavaVersion.VERSION_25 }`, keeping toolchain 27.
-- `.gitignore`: `build/`, `.gradle/`, `.kotlin/`, `data/`, `web/node_modules/`, `web/dist/`.
+- Coordinates `joinbot:join-gate-bot:0-SNAPSHOT`, `<build><finalName>join-gate-bot</finalName>`, `sourceDirectory` `src/main/kotlin`, `testSourceDirectory` `src/test/kotlin`.
+- Dependencies: exchange-bot's list minus db-scheduler and ktnip; kotest runner/assertions/property, ktor-client-mock and ktor-server-test-host in `test` scope.
+- `kotlin-maven-plugin` `${kotlin.version}`: `jvmTarget` 27, `compilerPlugins` `kotlinx-serialization` (plugin dependency `org.jetbrains.kotlin:kotlin-maven-serialization`). If Kotlin 2.4.20 rejects target 27, set `jvmTarget` 25 and keep running on 27.
+- `me.kpavlov.ksp.maven:ksp-maven-plugin` 0.4.7, `process` goal, with plugin dependency `eu.vendeli:ktnip:${telegrambot.version}` and option `package=joinbot` (vendeli's KSP arg, see its "Activities and Processors" wiki).
+- `maven-surefire-plugin` 3.x (JUnit Platform runs kotest).
+- `maven-dependency-plugin` `copy-dependencies` at `package` → `target/lib` (runtime scope).
+- `exec-maven-plugin` with default `mainClass` `joinbot.MainKt`, for `./mvnw -q exec:java` (run) and `-Dexec.mainClass=joinbot.KeygenMainKt` (keygen, Task 2).
+- `.gitignore`: `target/`, `.kotlin/`, `data/`, `web/node_modules/`, `web/dist/`.
+- `Handlers.kt`: `@CommandHandler(["/start"]) suspend fun start(user: User, bot: TelegramBot) {}`, a stub that Task 11 fills in.
 - `tinylog.properties`: copy from exchange-bot unchanged.
 
 - [ ] **Step 4: Write the failing test `ConfigTest`**
@@ -103,19 +113,21 @@ class ConfigTest : StringSpec({
 
 - [ ] **Step 5: Run it to verify it fails**
 
-Run: `./gradlew test --tests 'joinbot.ConfigTest'`
+Run: `./mvnw -q test -Dtest='ConfigTest'`
 Expected: compilation FAIL, `Unresolved reference: loadConfig`.
 
 - [ ] **Step 6: Implement `Config`/`loadConfig` in `Config.kt`, and a `Main.kt` whose `main()` calls `loadConfig(System::getenv)` and returns**
 
-- [ ] **Step 7: Run `mise run build`**
+- [ ] **Step 7: Run `mise run build`, then check that KSP ran**
 
-Expected: `BUILD SUCCESSFUL`, `ConfigTest` 4 passed.
+Run: `mise run build && find target -name ActivitiesData.kt`
+Expected: `BUILD SUCCESS`, `ConfigTest` 4 passed, and one path printed (ktnip's generated registry, `eu/vendeli/tgbot/generated/ActivitiesData.kt`).
+If ktnip can't run under the Maven plugin (no file, or a KSP error), stop the experiment's KSP half: remove `ksp-maven-plugin`, delete the stub annotation, and do Task 11 with vendeli's functional DSL (`bot.setFunctionality { onCommand("/start") {…}; onUpdate(UpdateType.CHAT_JOIN_REQUEST) {…}; onUpdate(UpdateType.MY_CHAT_MEMBER) {…}; whenNotHandled {…} }`). Note the outcome in the commit message.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add -A && git commit -m "build: mise toolchain, Gradle skeleton, Config"
+git add -A && git commit -m "build: mise toolchain, Maven skeleton with KSP, Config"
 ```
 
 ---
@@ -185,7 +197,7 @@ class DbTest : StringSpec({
 
 - [ ] **Step 3: Run them to verify they fail**
 
-Run: `./gradlew test --tests 'joinbot.CryptoTest' --tests 'joinbot.DbTest'`
+Run: `./mvnw -q test -Dtest='CryptoTest,DbTest'`
 Expected: compilation FAIL.
 
 - [ ] **Step 4: Implement**
@@ -278,9 +290,9 @@ class FormSchemaTest : StringSpec({
 
 Replace the `"…"` option in the spec example with `"Music"` so the example is concrete.
 
-- [ ] **Step 2: Run it to verify it fails**: `./gradlew test --tests 'joinbot.FormSchemaTest'` → compilation FAIL.
+- [ ] **Step 2: Run it to verify it fails**: `./mvnw -q test -Dtest='FormSchemaTest'` → compilation FAIL.
 - [ ] **Step 3: Implement `FormSchema.kt`.** Parse links with `java.net.URI`: scheme `http`/`https`, non-null host. Parse ints with `toLongOrNull()` on the trimmed text.
-- [ ] **Step 4: Run it to verify it passes**: `./gradlew test --tests 'joinbot.FormSchemaTest'` → PASS.
+- [ ] **Step 4: Run it to verify it passes**: `./mvnw -q test -Dtest='FormSchemaTest'` → PASS.
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: form schema and validation"`
 
 ---
@@ -349,7 +361,7 @@ class ReposTest : StringSpec({
 
 Each test body asserts exactly what its name and comment say. Use `testDb("<test name>")`.
 
-- [ ] **Step 2: Run it to verify it fails**: `./gradlew test --tests 'joinbot.ReposTest'` → compilation FAIL.
+- [ ] **Step 2: Run it to verify it fails**: `./mvnw -q test -Dtest='ReposTest'` → compilation FAIL.
 - [ ] **Step 3: Implement `Repos.kt`**: Exposed DSL, set-based statements (`deleteWhere`, conditional `update`), no per-row loops.
 - [ ] **Step 4: Run it to verify it passes**: PASS.
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: repositories with sealed answers and first-wins decide"`
@@ -406,7 +418,7 @@ class VendeliTgTest : StringSpec({
 
 `TestBot.kt` copies exchange-bot's `recordingBot`/`Call` and adds `failingBot(code: Int, description: String): TelegramBot`, which answers every call with `{"ok":false,"error_code":code,"description":description}`.
 
-- [ ] **Step 2: Run it to verify it fails**: `./gradlew test --tests 'joinbot.VendeliTgTest'` → compilation FAIL.
+- [ ] **Step 2: Run it to verify it fails**: `./mvnw -q test -Dtest='VendeliTgTest'` → compilation FAIL.
 - [ ] **Step 3: Implement.** Use vendeli's typed actions (`message`, `editMessageText`, `answerCallbackQuery`, `approveChatJoinRequest`, `declineChatJoinRequest`, `getChatAdministrators`, `sendDocument`) through `sendReturning(bot).getOrNull()`/`Response.Failure`. Write the en copy in a plain, short register, and translate ru from it.
 - [ ] **Step 4: Run it to verify it passes**: PASS.
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: Telegram port, vendeli adapter, en/ru texts"`
@@ -443,7 +455,7 @@ class VendeliTgTest : StringSpec({
 "removal deactivates and tells open sessions" { /* active group + 2 sessions → onBotStatus(…, false, false) → inactive, sessions gone, 2 GROUP_GONE sends */ }
 ```
 
-- [ ] **Step 2: Run to fail** → **Step 3: Implement** (cache: `ConcurrentHashMap<Long, Pair<Instant, List<Admin>>>`) → **Step 4: Run to pass**: `./gradlew test --tests 'joinbot.AdminCheckTest' --tests 'joinbot.GroupRegistryTest'`
+- [ ] **Step 2: Run to fail** → **Step 3: Implement** (cache: `ConcurrentHashMap<Long, Pair<Instant, List<Admin>>>`) → **Step 4: Run to pass**: `./mvnw -q test -Dtest='AdminCheckTest,GroupRegistryTest'`
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: admin check cache and group registration"`
 
 ---
@@ -485,7 +497,7 @@ Built before ApplicantFlow because submitting hands off to it.
 "unreachable submission renders without answers" { renderReview(subWithNullAnswers, null, "en") shouldContain Texts.t("en", T.REVIEW_UNREACHABLE, "Ann") }
 ```
 
-- [ ] **Step 2: Run to fail** → **Step 3: Implement** → **Step 4: Run to pass**: `./gradlew test --tests 'joinbot.ReviewServiceTest'`
+- [ ] **Step 2: Run to fail** → **Step 3: Implement** → **Step 4: Run to pass**: `./mvnw -q test -Dtest='ReviewServiceTest'`
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: review fan-out and first-click-wins decisions"`
 
 ---
@@ -540,7 +552,7 @@ Built before ApplicantFlow because submitting hands off to it.
 "repeat join request" { /* mid-session join again → session restarted at step 0; with a PENDING submission → no new session, no message */ }
 ```
 
-- [ ] **Step 2: Run to fail** → **Step 3: Implement** → **Step 4: Run to pass**: `./gradlew test --tests 'joinbot.ApplicantFlowTest'`
+- [ ] **Step 2: Run to fail** → **Step 3: Implement** → **Step 4: Run to pass**: `./mvnw -q test -Dtest='ApplicantFlowTest'`
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: data-driven applicant form flow"`
 
 ---
@@ -571,7 +583,7 @@ Built before ApplicantFlow because submitting hands off to it.
 "one failing decline does not stop the rest" { /* FakeTg decline throws for user 1 → user 2 still expired */ }
 ```
 
-- [ ] **Step 2: Run to fail** → **Step 3: Implement** → **Step 4: Run to pass**: `./gradlew test --tests 'joinbot.PurgeTest'`
+- [ ] **Step 2: Run to fail** → **Step 3: Implement** → **Step 4: Run to pass**: `./mvnw -q test -Dtest='PurgeTest'`
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: daily purge of idle sessions and old submissions"`
 
 ---
@@ -622,7 +634,7 @@ Built before ApplicantFlow because submitting hands off to it.
 "formula injection neutralised and quotes escaped" { toCsv(…answer "=1+1"…) shouldContain "'=1+1"; answer "a\"b,c" → "\"a\"\"b,c\"" }
 ```
 
-- [ ] **Step 2: Run to fail** → **Step 3: Implement** → **Step 4: Run to pass**: `./gradlew test --tests 'joinbot.MiniApp*' --tests 'joinbot.CsvTest'`
+- [ ] **Step 2: Run to fail** → **Step 3: Implement** → **Step 4: Run to pass**: `./mvnw -q test -Dtest='MiniApp*Test,CsvTest'`
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: Mini App API, CSV export, filesystem static files"`
 
 ---
@@ -630,7 +642,8 @@ Built before ApplicantFlow because submitting hands off to it.
 ### Task 11: Bot wiring and Main
 
 **Files:**
-- Create: `src/main/kotlin/joinbot/Handlers.kt`, `Registry.kt`
+- Modify: `src/main/kotlin/joinbot/Handlers.kt` (stub from Task 1)
+- Create: `src/main/kotlin/joinbot/Registry.kt`
 - Modify: `src/main/kotlin/joinbot/Main.kt`
 - Test: `src/test/kotlin/joinbot/HandlersTest.kt`, `MenuButtonTest.kt` (copy from exchange-bot)
 
@@ -656,8 +669,8 @@ Built before ApplicantFlow because submitting hands off to it.
 "/start from a stranger explains how to join" { /* … HOW_TO_JOIN */ }
 ```
 
-- [ ] **Step 2: Run to fail** → **Step 3: Implement** → **Step 4: Run to pass**: `./gradlew test --tests 'joinbot.HandlersTest' --tests 'joinbot.MenuButtonTest'`
-- [ ] **Step 5: Smoke run** with a real test bot token: `BOT_TOKEN=… DATA_KEYSET="$(./gradlew -q keygen | sed -n 's/^DATA_KEYSET=//p')" DB_FILE_KEY=a DB_USER_PW=b ./gradlew run`. Expected: no exception for 30 s; `Ctrl-C` exits.
+- [ ] **Step 2: Run to fail** → **Step 3: Implement** → **Step 4: Run to pass**: `./mvnw -q test -Dtest='HandlersTest,MenuButtonTest'`
+- [ ] **Step 5: Smoke run** with a real test bot token: `BOT_TOKEN=… DATA_KEYSET="$(./mvnw -q exec:java -Dexec.mainClass=joinbot.KeygenMainKt | sed -n 's/^DATA_KEYSET=//p')" DB_FILE_KEY=a DB_USER_PW=b ./mvnw -q exec:java`. Expected: no exception for 30 s; `Ctrl-C` exits.
 - [ ] **Step 6: Commit** — `git add -A && git commit -m "feat: wire handlers, menu button, startup"`
 
 ---
@@ -717,17 +730,23 @@ depends = ["web:install"]
 dir = "web"
 run = "bun run build"
 
+[tasks."backend:test"]
+run = "./mvnw -B test"
+
+[tasks."backend:build"]
+run = "./mvnw -B verify"        # compile, KSP, tests, jar + target/lib
+
 [tasks.test]
-depends = ["web:test"]
-run = "./gradlew test"
+depends = ["web:test", "backend:test"]
 
 [tasks.build]
-depends = ["web:test", "web:build"]
-run = "./gradlew build"
+depends = ["web:test", "web:build", "backend:build"]
 ```
 
-- [ ] **Step 7: Run `mise run build`**: Expected: svelte-check 0 errors, `web/dist/index.html` exists, Gradle `BUILD SUCCESSFUL`.
-- [ ] **Step 8: Manual check**: `MINIAPP_URL=https://<tunnel> … ./gradlew run`, open the bot menu button in Telegram, create a form, then send a join request from a second account. Expected: the form arrives in DM and the approve copy arrives for the admin.
+`build` and `test` have no `run` of their own: they are the list of what gets built, and mise runs the web and backend parts in parallel.
+
+- [ ] **Step 7: Run `mise run build`**: Expected: svelte-check 0 errors, `web/dist/index.html` exists, Maven `BUILD SUCCESS`.
+- [ ] **Step 8: Manual check**: `MINIAPP_URL=https://<tunnel> … ./mvnw -q exec:java`, open the bot menu button in Telegram, create a form, then send a join request from a second account. Expected: the form arrives in DM and the approve copy arrives for the admin.
 - [ ] **Step 9: Commit** — `git add -A && git commit -m "feat: Svelte admin Mini App"`
 
 ---
@@ -745,10 +764,10 @@ Expected: `27`; on `25`, use `jre-25-cds-distroless-glibc` (spec §7 fallback). 
 
 - [ ] **Step 2: Write the Dockerfile**
   1. `FROM oven/bun:1.4.2 AS web`: copy `web/package.json web/bun.lock`, `bun install --frozen-lockfile` with `--mount=type=cache,target=/root/.bun/install/cache`, copy `web/`, `bun run build`.
-  2. `FROM <jdk builder> AS build`: copy the wrapper and build files, then `./gradlew --no-daemon dependencies` with a `/root/.gradle` cache mount. Copy `src`, run `./gradlew --no-daemon installDist -x test`, then `mkdir /data-seed && chown 10001:10001 /data-seed`.
-  3. Runtime (from Step 1, digest-pinned): copy `build/install/join-gate-bot/lib` → `/app/lib`, `/web/dist` → `/app/web`, `/data-seed` → `/app/data` (chown 10001). Then `USER 10001:10001`, `VOLUME ["/app/data"]`, `ENV DB_PATH=/app/data/joinbot WEB_DIR=/app/web TZ=UTC`, `EXPOSE 8080`, and `ENTRYPOINT ["java","-Duser.timezone=UTC","-cp","/app/lib/*","joinbot.MainKt"]`.
+  2. `FROM <jdk builder> AS build`: copy `mvnw`, `.mvn`, `pom.xml`, then `./mvnw -B dependency:go-offline` with a `/root/.m2` cache mount. Copy `src`, run `./mvnw -B package -DskipTests` (same mount), then `mkdir /data-seed && chown 10001:10001 /data-seed`.
+  3. Runtime (from Step 1, digest-pinned): copy `target/lib/*` and `target/join-gate-bot.jar` → `/app/lib`, `/web/dist` → `/app/web`, `/data-seed` → `/app/data` (chown 10001). Then `USER 10001:10001`, `VOLUME ["/app/data"]`, `ENV DB_PATH=/app/data/joinbot WEB_DIR=/app/web TZ=UTC`, `EXPOSE 8080`, and `ENTRYPOINT ["java","-Duser.timezone=UTC","-cp","/app/lib/*","joinbot.MainKt"]`.
 
-  `.dockerignore`: `build`, `.gradle`, `web/node_modules`, `web/dist`, `data`, `.git`. `compose.yaml`: one service with the image, an `env_file: .env`, a named volume on `/app/data`, and port `8080`.
+  `.dockerignore`: `target`, `web/node_modules`, `web/dist`, `data`, `.git`. `compose.yaml`: one service with the image, an `env_file: .env`, a named volume on `/app/data`, and port `8080`.
 - [ ] **Step 3: Build and run it**
 
 Run: `docker build -t join-gate-bot:dev . && docker run --rm --entrypoint java join-gate-bot:dev -cp '/app/lib/*' joinbot.KeygenMainKt`

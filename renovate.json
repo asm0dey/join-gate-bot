@@ -24,16 +24,6 @@
   ],
   "customManagers": [
     {
-      "description": "The Bun version in the version catalog, marked with a `# renovate:` comment.",
-      "customType": "regex",
-      "managerFilePatterns": [
-        "/^gradle/libs\\.versions\\.toml$/"
-      ],
-      "matchStrings": [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)( extractVersion=(?<extractVersion>\\S+))?\\n\\S+ = \"(?<currentValue>[^\"]+)\""
-      ]
-    },
-    {
       "description": "Java in .sdkmanrc, looked up in SDKMAN's own candidate list so Renovate only proposes identifiers `sdk install` (and mise) accept.",
       "customType": "regex",
       "managerFilePatterns": [
