@@ -115,6 +115,15 @@ class MiniAppApiTest : StringSpec({
             parse(get("/api/groups").bodyAsText()).jsonArray[0].jsonObject["hasForm"]!!.jsonPrimitive.content shouldBe "true"
         }
     }
+    "writes check admin rights afresh, past the cache" {
+        val e = ApiEnv("api-fresh")
+        e.run {
+            get("/api/groups/$G1/form").status shouldBe HttpStatusCode.OK // caches user 1 as a decider
+            e.tg.adminsOf[G1] = emptyList()
+            get("/api/groups/$G1/form").status shouldBe HttpStatusCode.OK // reads may use the cache
+            put("/api/groups/$G1/form", saveBody(form, 0)).status shouldBe HttpStatusCode.Forbidden
+        }
+    }
     "invalid schema → 400 with errors" {
         ApiEnv("api-invalid").run {
             val dup = Form("", listOf(Text("a4", "x"), Text("a4", "y")))
