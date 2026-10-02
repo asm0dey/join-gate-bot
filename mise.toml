@@ -4,6 +4,20 @@ idiomatic_version_file_enable_tools = ["java"]   # take Java from .sdkmanrc
 [tools]
 bun = "1.4.2"
 
+[tasks."web:install"]
+dir = "web"
+run = "bun install --frozen-lockfile"
+
+[tasks."web:test"]
+depends = ["web:install"]
+dir = "web"
+run = "bun test src"
+
+[tasks."web:build"]
+depends = ["web:install"]
+dir = "web"
+run = "bun run build"
+
 [tasks."backend:test"]
 run = "./mvnw -B test"
 
@@ -11,7 +25,7 @@ run = "./mvnw -B test"
 run = "./mvnw -B verify"        # compile, KSP, tests, jar + target/lib
 
 [tasks.test]
-depends = ["backend:test"]
+depends = ["web:test", "backend:test"]
 
 [tasks.build]
-depends = ["backend:build"]
+depends = ["web:test", "web:build", "backend:build"]

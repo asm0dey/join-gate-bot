@@ -1,0 +1,23 @@
+{
+  "name": "join-gate-miniapp",
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/bun": "1.4.2",
+    "daisyui": "5.7.46",
+    "svelte-check": "4.7.6",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vite": "8.3.1"
+  },
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "svelte-check && vite build",
+    "test": "bun test src"
+  },
+  "type": "module",
+  "dependencies": {
+    "svelte": "5.57.1"
+  }
+}
