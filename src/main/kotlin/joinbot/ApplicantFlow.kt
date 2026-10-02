@@ -1,7 +1,10 @@
 package joinbot
 
 import java.time.Clock
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 
 /** Max chars per summary message; the summary is split at line boundaries. */
@@ -18,7 +21,13 @@ class ApplicantFlow(
     private val groups: GroupRepo, private val forms: FormRepo, private val sessions: SessionRepo, private val subs: SubmissionRepo,
     private val users: BotUserRepo, private val review: ReviewService, private val tg: Tg, private val clock: Clock,
 ) {
-    suspend fun onJoinRequest(chatId: Long, userId: Long, userChatId: Long, profile: Profile, lang: String?) {
+    // ponytail: one Mutex per user ever seen, never evicted; evict idle entries if memory matters
+    private val locks = ConcurrentHashMap<Long, Mutex>()
+
+    /** Every public entry point runs under the user's lock, so one user's updates never interleave. */
+    private suspend inline fun <R> locked(userId: Long, block: () -> R): R = locks.computeIfAbsent(userId) { Mutex() }.withLock { block() }
+
+    suspend fun onJoinRequest(chatId: Long, userId: Long, userChatId: Long, profile: Profile, lang: String?) = locked(userId) {
         if (groups.get(chatId)?.active != true) return
         val (version, _) = forms.current(chatId) ?: return
         if (subs.pendingFor(chatId, userId) != null) return
@@ -26,24 +35,28 @@ class ApplicantFlow(
         val s = Session(userId, chatId, version, 0, SessionState(profile), lang, clock.instant())
         if (active != null && active.chatId != chatId) sessions.put(s.copy(step = WAITING))
         else begin(s, userChatId)
+        Unit
     }
 
     /** False when [userId] has no active session. */
-    suspend fun onMessage(userId: Long, text: String?, lang: String?): Boolean {
-        val s = sessions.active(userId)?.withLang(lang) ?: return false
-        val form = formOf(s) ?: return false
+    suspend fun onMessage(userId: Long, text: String?, lang: String?): Boolean = locked(userId) {
+        val s = sessions.active(userId)?.withLang(lang) ?: return@locked false
+        val form = formOf(s) ?: return@locked false
         val field = form.fields.getOrNull(s.step)
         val buttonOnly = field == null || field is Multi || field is Consent || (field is Radio && !s.state.otherMode)
-        if (text == null || buttonOnly) return reask(s, form, Reason.WRONG_KIND)
+        if (text == null || buttonOnly) return@locked reask(s, form, Reason.WRONG_KIND)
         when (val c = validate(field, Input.Typed(text))) {
             is Check.Ok -> advance(s, form, c.value)
             is Check.Invalid -> reask(s, form, c.reason)
         }
-        return true
+        true
     }
 
     /** [messageId] is the message the button sits on; its keyboard is edited. */
-    suspend fun onCallback(userId: Long, callbackId: String, data: String, lang: String?, messageId: Long) {
+    suspend fun onCallback(userId: Long, callbackId: String, data: String, lang: String?, messageId: Long) =
+        locked(userId) { callback(userId, callbackId, data, lang, messageId) }
+
+    private suspend fun callback(userId: Long, callbackId: String, data: String, lang: String?, messageId: Long) {
         suspend fun stale() = tg.answer(callbackId, Texts.t(lang, T.STALE_BUTTON), alert = true)
         val p = data.split('|')
         val chatId = p.getOrNull(1)?.toLongOrNull(); val step = p.getOrNull(2)?.toIntOrNull()
@@ -80,7 +93,7 @@ class ApplicantFlow(
             }
             action == 'n' && field is Consent -> {
                 tg.answer(callbackId); tg.edit(userId, messageId, field.prompt)
-                decline(s, T.DECLINED_CONSENT)
+                declineUnlocked(s, T.DECLINED_CONSENT)
                 startNext(userId)
                 return
             }
@@ -95,16 +108,18 @@ class ApplicantFlow(
     }
 
     /** True when an active session was re-asked. */
-    suspend fun onStart(userId: Long, lang: String?): Boolean {
-        val s = sessions.active(userId)?.withLang(lang) ?: return false
-        val form = formOf(s) ?: return false
+    suspend fun onStart(userId: Long, lang: String?): Boolean = locked(userId) {
+        val s = sessions.active(userId)?.withLang(lang) ?: return@locked false
+        val form = formOf(s) ?: return@locked false
         put(s)
         ask(s, form)
-        return true
+        true
     }
 
     /** Ends [s]: forgets it, declines the join request, tells the user [key]. Purge uses it too. */
-    suspend fun decline(s: Session, key: T) {
+    suspend fun decline(s: Session, key: T) = locked(s.userId) { declineUnlocked(s, key) }
+
+    private suspend fun declineUnlocked(s: Session, key: T) {
         sessions.delete(s.userId, s.chatId)
         try {
             tg.decline(s.chatId, s.userId)
@@ -168,6 +183,12 @@ class ApplicantFlow(
     }
 
     private suspend fun submit(s: Session, form: Form) {
+        // a create that landed before a failed delete must not be repeated by the summary's Submit button
+        if (subs.pendingFor(s.chatId, s.userId) != null) {
+            sessions.delete(s.userId, s.chatId)
+            startNext(s.userId)
+            return
+        }
         val answers = form.fields.associate { it.id to s.state.answers[it.id].orEmpty() }
         val id = subs.create(s.chatId, s.userId, s.formVersion, s.state.profile, answers, Status.PENDING, clock.instant())
         sessions.delete(s.userId, s.chatId)
@@ -204,8 +225,7 @@ class ApplicantFlow(
     private fun summary(s: Session, form: Form): List<String> {
         val text = (listOf(Texts.t(s.lang, T.SUMMARY_HEADER)) +
             form.fields.map { "${it.prompt}: ${s.state.answers[it.id].orEmpty().ifEmpty { "—" }}" }).joinToString("\n")
-        // a single line longer than a chunk is cut hard
-        val lines = text.split('\n').flatMap { it.chunked(SUMMARY_CHUNK) }
+        val lines = text.split('\n').flatMap(::hardCut)
         val chunks = mutableListOf<String>()
         val cur = StringBuilder()
         for (l in lines) {
@@ -217,6 +237,17 @@ class ApplicantFlow(
     }
 
     private companion object {
+        /** [line] in pieces of at most [SUMMARY_CHUNK] chars, never between the two halves of a surrogate pair. */
+        fun hardCut(line: String): List<String> = buildList {
+            var i = 0
+            do {
+                var end = minOf(i + SUMMARY_CHUNK, line.length)
+                if (end < line.length && line[end - 1].isHighSurrogate()) end--
+                add(line.substring(i, end))
+                i = end
+            } while (i < line.length)
+        }
+
         val log = LoggerFactory.getLogger(ApplicantFlow::class.java)
     }
 }

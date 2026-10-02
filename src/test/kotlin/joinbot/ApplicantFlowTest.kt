@@ -7,6 +7,9 @@ import io.kotest.matchers.ints.shouldBeLessThan
 import io.kotest.matchers.ints.shouldBeLessThanOrEqual
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 
 private const val CHAT = -100L
 private const val CHAT2 = -200L
@@ -293,5 +296,67 @@ class ApplicantFlowTest : StringSpec({
         e.clock.now = e.clock.now.plusSeconds(60)
         e.press('p', 0)
         e.session()!!.touchedAt shouldBe e.clock.now
+    }
+
+    "double-tapped Submit creates one submission" {
+        val e = FlowEnv("af-race-submit")
+        e.join(); e.fillTo(7)
+        coroutineScope {
+            repeat(2) { launch(Dispatchers.Default) { e.press('S', step = 7) } }
+        }
+        e.subs.list(CHAT, null).size shouldBe 1
+        e.stale() shouldBe 1
+    }
+
+    "concurrent joins to two chats leave one active session" {
+        val e = FlowEnv("af-race-join")
+        e.group(CHAT2)
+        coroutineScope {
+            launch(Dispatchers.Default) { e.join(CHAT) }
+            launch(Dispatchers.Default) { e.join(CHAT2) }
+        }
+        e.sessions.forUser(U).map { it.step }.sorted() shouldBe listOf(WAITING, 0)
+    }
+
+    "submit after a create whose session delete failed does not resubmit" {
+        val e = FlowEnv("af-resubmit")
+        e.join(); e.fillTo(7)
+        e.subs.create(CHAT, U, 1, ann, mapOf("a1" to "Limassol"), Status.PENDING, e.clock.instant())
+        e.press('S')
+        e.subs.list(CHAT, null).size shouldBe 1
+        e.session().shouldBeNull()
+    }
+
+    "consent disagree starts the next waiting session" {
+        val e = FlowEnv("af-decline-next")
+        e.group(CHAT2)
+        e.join(CHAT); e.join(CHAT2)
+        e.fillTo(6)
+        e.press('n')
+        e.session(CHAT2)!!.step shouldBe 0
+        e.last().buttons.flatten().first().data shouldBe "f|$CHAT2|0|p|0"
+    }
+
+    "invalid input does not touch touched_at" {
+        val e = FlowEnv("af-touch-invalid")
+        e.join(); e.fillTo(4)
+        val before = e.session()!!.touchedAt
+        e.clock.now = e.clock.now.plusSeconds(60)
+        e.say("17")
+        e.session()!!.touchedAt shouldBe before
+    }
+
+    "summary hard cut never splits a surrogate pair" {
+        val e = FlowEnv("af-emoji")
+        e.group(CHAT2, Form("w", listOf(Text("x1", "One"))))
+        e.flow.onJoinRequest(CHAT2, U, U_CHAT, ann, "en")
+        val answer = "a".repeat(SUMMARY_CHUNK - 6) + "😀".repeat(250) // "One: " puts a high surrogate at the cut
+        val before = e.toUser().size
+        e.say(answer)
+        val summary = e.toUser().drop(before)
+        summary.size shouldBeGreaterThanOrEqual 3
+        summary.forEach { it.text.last().isHighSurrogate() shouldBe false }
+        summary.first().text shouldBe en(T.SUMMARY_HEADER)
+        summary.drop(1).joinToString("") { it.text } shouldBe "One: $answer"
     }
 })
