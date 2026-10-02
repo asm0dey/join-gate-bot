@@ -14,8 +14,6 @@ import java.security.GeneralSecurityException
 /** AES-256-GCM per ADR 0002; a weaker AEAD would satisfy Tink's parse but not the design. */
 private const val MANDATED_AEAD_KEY_SIZE_BYTES = 32
 
-
-
 /**
  * Tink AES-256-GCM AEAD for the sensitive columns. Rotation is free: retired keys stay in the
  * keyset, so old ciphertexts still [open].

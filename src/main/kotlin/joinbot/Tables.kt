@@ -15,7 +15,7 @@ import java.time.Instant
  *
  * The stdlib also ships `kotlin.time.jdk8.toJavaInstant()`/`toKotlinInstant()` for
  * exactly this conversion, but that specific interop file does not resolve against
- * this project's Kotlin 2.4.10 toolchain (`error: unresolved reference` even in a
+ * this project's Kotlin 2.4.20 toolchain (`error: unresolved reference` even in a
  * standalone `kotlinc` compile, independent of Gradle — verified by hand). The
  * seconds/nanos bridge below uses only stable, directly-confirmed-resolvable members
  * of both `Instant` types, and neither direction touches a time zone.
