@@ -1,0 +1,17 @@
+[settings]
+idiomatic_version_file_enable_tools = ["java"]   # take Java from .sdkmanrc
+
+[tools]
+bun = "1.4.2"
+
+[tasks."backend:test"]
+run = "./mvnw -B test"
+
+[tasks."backend:build"]
+run = "./mvnw -B verify"        # compile, KSP, tests, jar + target/lib
+
+[tasks.test]
+depends = ["backend:test"]
+
+[tasks.build]
+depends = ["backend:build"]
