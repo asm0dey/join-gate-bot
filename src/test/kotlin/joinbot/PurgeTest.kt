@@ -1,6 +1,7 @@
 package joinbot
 
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -13,6 +14,7 @@ private class PurgeEnv(name: String) {
     val clock = TestClock()
     val tg = FakeTg()
     val groups = GroupRepo(db)
+    val forms = FormRepo(db)
     val sessions = SessionRepo(db, testCrypto())
     val subs = SubmissionRepo(db, testCrypto())
     val users = BotUserRepo(db)
@@ -70,6 +72,18 @@ class PurgeTest : StringSpec({
         val old = e.subs.create(-1, 5, 1, ann, null, Status.APPROVED, e.clock.instant() - Duration.ofDays(31))
         e.purge.runOnce()
         e.subs.get(old).shouldBeNull()
+    }
+
+    "expiry starts the next waiting session, even an idle one" {
+        val e = PurgeEnv("purge-next")
+        listOf(-1L, -2L).forEach { e.groups.upsert(it, "G$it", true); e.forms.save(it, Form("hi", listOf(Text("q", "Q?"))), 0, 9, e.clock.instant()) }
+        e.session(5, -1, Duration.ofDays(8))
+        e.session(5, -2, Duration.ofDays(9), WAITING)
+        e.purge.runOnce()
+        e.sessions.get(5, -1).shouldBeNull()
+        e.sessions.get(5, -2)!!.step shouldBe 0
+        e.tg.sent.filter { it.chatId == 5L }.map { it.text } shouldBe listOf(Texts.t("en", T.EXPIRED), "hi", "Q?")
+        e.subs.list(-2, null).shouldBeEmpty()
     }
 
     "one failing decline does not stop the rest" {

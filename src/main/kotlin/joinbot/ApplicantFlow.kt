@@ -116,8 +116,11 @@ class ApplicantFlow(
         true
     }
 
-    /** Ends [s]: forgets it, declines the join request, tells the user [key]. Purge uses it too. */
-    suspend fun decline(s: Session, key: T) = locked(s.userId) { declineUnlocked(s, key) }
+    /** Ends [s]: forgets it, declines the join request, tells the user [key]; with [startNext], starts their next waiting form. */
+    suspend fun decline(s: Session, key: T, startNext: Boolean = false) = locked(s.userId) {
+        declineUnlocked(s, key)
+        if (startNext && s.step != WAITING) this.startNext(s.userId)
+    }
 
     private suspend fun declineUnlocked(s: Session, key: T) {
         sessions.delete(s.userId, s.chatId)
