@@ -10,9 +10,12 @@ import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.greaterEq
 import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.less
+import org.jetbrains.exposed.v1.core.max
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
+import org.jetbrains.exposed.v1.jdbc.insertIgnore
+import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.jdbc.update
@@ -37,7 +40,7 @@ data class Submission(
 /** Step of a queued session (spec B6). */
 const val WAITING = -1
 
-private val json = Json
+private val json = Json { ignoreUnknownKeys = true }
 
 class GroupRepo(private val db: Database) {
     fun upsert(chatId: Long, title: String, active: Boolean) = transaction(db) {
@@ -86,13 +89,15 @@ class FormRepo(private val db: Database) {
 
     /** New version, or null when [baseVersion] is not the current one (0 = none yet). */
     fun save(chatId: Long, form: Form, baseVersion: Int, by: Long, at: Instant): Int? = transaction(db) {
-        val cur = Forms.selectAll().where { Forms.chatId eq chatId }.maxOfOrNull { it[Forms.version] } ?: 0
+        val max = Forms.version.max()
+        val cur = Forms.select(max).where { Forms.chatId eq chatId }.single()[max] ?: 0
         if (cur != baseVersion) return@transaction null
-        Forms.insert {
+        // a concurrent save of the same base loses the PK race: insertIgnore yields no row
+        val inserted = Forms.insertIgnore {
             it[Forms.chatId] = chatId; it[version] = cur + 1
             it[schemaJson] = FormJson.encodeToString(form); it[updatedBy] = by; it[updatedAt] = at
-        }
-        cur + 1
+        }.insertedCount
+        if (inserted == 1) cur + 1 else null
     }
 
     private fun row(r: ResultRow) = r[Forms.version] to FormJson.decodeFromString<Form>(r[Forms.schemaJson])

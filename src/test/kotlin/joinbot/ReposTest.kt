@@ -109,4 +109,31 @@ class ReposTest : StringSpec({
         sessions.active(1)!!.chatId shouldBe 1
         sessions.forUser(1).size shouldBe 2
     }
+
+    "concurrent saves of the same base yield one winner" {
+        val db = testDb("concurrent saves same base"); group(db, 1)
+        val forms = FormRepo(db)
+        val out = java.util.concurrent.ConcurrentLinkedQueue<Int?>()
+        (1..2).map { i -> kotlin.concurrent.thread { out.add(forms.save(1, form.copy(welcome = "w$i"), 0, 9, now)) } }
+            .forEach { it.join() }
+        val results = out.toList()
+        results.filterNotNull() shouldBe listOf(1)
+        forms.current(1)!!.first shouldBe 1
+    }
+
+    "submission bytes are sealed and bound to the id" {
+        val db = testDb("submission bytes sealed"); group(db, 1)
+        val subs = SubmissionRepo(db, testCrypto())
+        val a = subs.create(1, 5, 1, Profile("Zed", "zed"), mapOf("a4" to "secret"), Status.PENDING, now)
+        val b = subs.create(1, 6, 1, p, mapOf("a4" to "x"), Status.PENDING, now)
+        transaction(db) {
+            val ra = Submissions.selectAll().where { Submissions.id eq a }.single()
+            val raw = String(ra[Submissions.profile], Charsets.ISO_8859_1) + String(ra[Submissions.answers]!!, Charsets.ISO_8859_1)
+            raw.contains("Zed") shouldBe false
+            raw.contains("secret") shouldBe false
+            Submissions.update({ Submissions.id eq b }) { it[profile] = ra[Submissions.profile]; it[answers] = ra[Submissions.answers] }
+        }
+        subs.get(a) shouldNotBe null
+        shouldThrow<GeneralSecurityException> { subs.get(b) }
+    }
 })
