@@ -1,0 +1,12 @@
+services:
+  join-gate-bot:
+    image: ghcr.io/asm0dey/join-gate-bot:latest
+    env_file: .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - data:/app/data
+    restart: unless-stopped
+
+volumes:
+  data:
