@@ -15,7 +15,7 @@ const en = {
   exportCsv: 'Export CSV', exported: 'Sent to your DM.', exportNoBot: 'Start the bot in a private chat first, then retry.',
   retention: 'Keep submissions for (days)', retentionHint: '1 to 3650', loadFail: 'Could not load. Try again.', retry: 'Retry',
   noAnswers: 'Answers were already erased.', saveFail: 'Request failed. Try again.', noAuth: 'Open this page from the bot menu in Telegram.',
-  newForm: 'No form yet.', inactive: 'inactive',
+  newForm: 'No form yet.', inactive: 'inactive', partial: 'Incomplete — the applicant could not be reached.',
 }
 const ru: typeof en = {
   groups: 'Группы', noGroups: 'Нет групп, где вы можете рассматривать заявки. Сначала добавьте бота в группу как админа.',
@@ -32,6 +32,6 @@ const ru: typeof en = {
   exportCsv: 'Экспорт CSV', exported: 'Отправлено вам в личные сообщения.', exportNoBot: 'Сначала запустите бота в личном чате и повторите.',
   retention: 'Хранить заявки (дней)', retentionHint: 'от 1 до 3650', loadFail: 'Не удалось загрузить. Повторите.', retry: 'Повторить',
   noAnswers: 'Ответы уже стёрты.', saveFail: 'Запрос не удался. Повторите.', noAuth: 'Откройте страницу из меню бота в Telegram.',
-  newForm: 'Анкеты пока нет.', inactive: 'неактивна',
+  newForm: 'Анкеты пока нет.', inactive: 'неактивна', partial: 'Не заполнена — до заявителя не достучаться.',
 }
 export const t: typeof en = tg?.initDataUnsafe.user?.language_code?.startsWith('ru') ? ru : en

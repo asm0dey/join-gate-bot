@@ -36,6 +36,7 @@
   <div class="card bg-base-100 p-3">
     <div class="font-semibold">{who(detail.row)}</div>
     <div class="text-sm text-neutral">{t[detail.row.status]} · {date(detail.row.createdAt)}</div>
+    {#if detail.partial}<div role="alert" class="alert alert-warning mt-2 py-2 text-sm">{t.partial}</div>{/if}
     {#if detail.answers}
       <dl class="mt-3 flex flex-col gap-2">
         {#each detail.answers as a}

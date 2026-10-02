@@ -7,7 +7,7 @@ export type Status = 'PENDING' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN' | 'EXPIRE
 export const STATUSES: Status[] = ['PENDING', 'APPROVED', 'REJECTED', 'WITHDRAWN', 'EXPIRED']
 export type SubmissionRow = { id: number; userId: number; name: string; username: string | null; status: Status; createdAt: string; decidedBy: number | null }
 export type Answer = { fieldId: string; prompt: string; value: string }
-export type SubmissionDetail = { row: SubmissionRow; answers: Answer[] | null }
+export type SubmissionDetail = { row: SubmissionRow; answers: Answer[] | null; partial: boolean }
 
 /** [body] is the parsed JSON error body, if any: ErrorsDto on 400, FormDto on 409. */
 export class ApiError extends Error {

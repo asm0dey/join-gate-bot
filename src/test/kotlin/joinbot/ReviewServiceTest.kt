@@ -216,6 +216,24 @@ class ReviewServiceTest : StringSpec({
         text shouldContain Texts.t("en", T.REVIEW_UNREACHABLE, "Ann")
     }
 
+    "a partial submission leads with the unreachable line, then the answered prompts" {
+        val e = Env("partial")
+        e.group(CHAT, admin(1))
+        val s = Submission(1, CHAT, APPLICANT, 1, ann, mapOf("q1" to "fun"), Status.PENDING, null, null, Instant.EPOCH)
+        val text = e.review.renderReview(s, form, "en")
+        text shouldContain Texts.t("en", T.REVIEW_UNREACHABLE, "Ann") + "\n\nWhy join?: fun"
+        text shouldNotContain "Where from?"
+    }
+
+    "a full submission, skipped fields included, carries no unreachable line" {
+        val e = Env("full")
+        e.group(CHAT, admin(1))
+        val s = Submission(1, CHAT, APPLICANT, 1, ann, mapOf("q1" to "fun", "q2" to ""), Status.PENDING, null, null, Instant.EPOCH)
+        val text = e.review.renderReview(s, form, "en")
+        text shouldNotContain Texts.t("en", T.REVIEW_UNREACHABLE, "Ann")
+        text shouldContain "Why join?: fun\nWhere from?: "
+    }
+
     "long reviews are cut at a line boundary" {
         val e = Env("long")
         e.group(CHAT, admin(1))

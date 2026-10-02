@@ -149,6 +149,19 @@ class MiniAppApiTest : StringSpec({
             get("/api/groups/$G1/submissions?status=bogus").status shouldBe HttpStatusCode.BadRequest
         }
     }
+    "submission detail flags a partial submission" {
+        val e = ApiEnv("api-partial")
+        e.forms.save(G1, form, 0, 1, e.clock.instant())
+        val partial = e.subs.create(G1, 5, 1, Profile("Ann", null), mapOf("q1" to "fun"), Status.PENDING, e.clock.instant())
+        val none = e.subs.create(G1, 6, 1, Profile("Bob", null), null, Status.PENDING, e.clock.instant())
+        val full = e.subs.create(G1, 7, 1, Profile("Cy", null), mapOf("q1" to "fun", "q2" to ""), Status.PENDING, e.clock.instant())
+        e.run {
+            suspend fun flag(id: Long) = parse(get("/api/groups/$G1/submissions/$id").bodyAsText()).jsonObject["partial"]!!.jsonPrimitive.content
+            flag(partial) shouldBe "true"
+            flag(none) shouldBe "true"
+            flag(full) shouldBe "false"
+        }
+    }
     "submission of another group is 404" {
         val e = ApiEnv("api-cross")
         val id = e.subs.create(G2, 5, null, Profile("Ann", null), null, Status.PENDING, e.clock.instant())

@@ -6,6 +6,12 @@ import java.time.Duration
 /** Telegram's message length limit. */
 const val MAX_MESSAGE = 4096
 
+/**
+ * The applicant became unreachable mid-form: no answers, or a field of the pinned [form] has no key
+ * (submit stores every field id, "" when skipped). Without the form, only null answers tell.
+ */
+fun Submission.partial(form: Form?) = answers == null || form?.fields.orEmpty().any { it.id !in answers }
+
 /** Fans a submission out to the group's deciders and settles Approve/Reject clicks; the first click wins (spec C). */
 class ReviewService(
     private val subs: SubmissionRepo, private val forms: FormRepo, private val groups: GroupRepo, private val users: BotUserRepo,
@@ -99,7 +105,10 @@ class ReviewService(
         append(Texts.t(lang, T.REVIEW_HEADER, s.profile.name, groups.get(s.chatId)?.title.orEmpty()))
         s.profile.username?.let { append("\n@").append(it) }
         append("\n\n")
-        val answers = s.answers ?: run { append(Texts.t(lang, T.REVIEW_UNREACHABLE, s.profile.name)); return@buildString }
+        val partial = s.partial(form)
+        if (partial) append(Texts.t(lang, T.REVIEW_UNREACHABLE, s.profile.name))
+        val answers = s.answers ?: return@buildString
+        if (partial) append("\n\n")
         // form order; ids the form no longer knows (or a missing form) fall back to the raw id
         val prompts = form?.fields.orEmpty().associate { it.id to it.prompt }
         val ids = prompts.keys.filter { it in answers } + answers.keys.filter { it !in prompts }

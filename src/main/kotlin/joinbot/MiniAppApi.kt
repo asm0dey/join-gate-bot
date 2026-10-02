@@ -27,7 +27,7 @@ class MiniAppDeps(
     val createdAt: String, val decidedBy: Long?,
 )
 @Serializable data class AnswerDto(val fieldId: String, val prompt: String, val value: String)
-@Serializable data class SubmissionDetail(val row: SubmissionRow, val answers: List<AnswerDto>?)
+@Serializable data class SubmissionDetail(val row: SubmissionRow, val answers: List<AnswerDto>?, val partial: Boolean)
 @Serializable data class SettingsBody(val retentionDays: Int)
 
 private fun Submission.row() = SubmissionRow(id, userId, profile.name, profile.username, status, createdAt.toString(), decidedBy)
@@ -90,7 +90,7 @@ fun Route.api(d: MiniAppDeps) {
             val form = s.formVersion?.let { d.forms.version(g.chatId, it) }
             val answers = s.answers?.let { a -> form?.fields?.filter { it.id in a }?.map { AnswerDto(it.id, it.prompt, a.getValue(it.id)) }
                 ?: a.map { (k, v) -> AnswerDto(k, k, v) } }
-            call.respond(SubmissionDetail(s.row(), answers))
+            call.respond(SubmissionDetail(s.row(), answers, s.partial(form)))
         }
     }
     delete("/groups/{id}/submissions/{sid}") {
