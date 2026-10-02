@@ -90,15 +90,16 @@ private suspend fun <T> call(block: suspend () -> Response<T>): Response<T>? = t
     null
 }
 
-private fun Response<*>?.toDecision(): Decision = when {
-    this is Response.Success -> Decision.OK
-    this is Response.Failure && (description.orEmpty().contains("HIDE_REQUESTER_MISSING") ||
-        description.orEmpty().contains("USER_ALREADY_PARTICIPANT")) -> Decision.GONE
+private fun Response<*>?.toDecision(): Decision = when (this) {
+    is Response.Success -> Decision.OK
+    is Response.Failure if (description.orEmpty().contains("HIDE_REQUESTER_MISSING") ||
+            description.orEmpty().contains("USER_ALREADY_PARTICIPANT")) -> Decision.GONE
+
     else -> Decision.TRANSIENT
 }
 
-private fun Response<*>?.toSent(): Sent = when {
-    this is Response.Success -> Sent.Ok((result as? Message)?.messageId ?: return Sent.Failed)
-    this is Response.Failure && errorCode == 403 -> Sent.Forbidden
+private fun Response<*>?.toSent(): Sent = when (this) {
+    is Response.Success -> Sent.Ok((result as? Message)?.messageId ?: return Sent.Failed)
+    is Response.Failure if errorCode == 403 -> Sent.Forbidden
     else -> Sent.Failed
 }

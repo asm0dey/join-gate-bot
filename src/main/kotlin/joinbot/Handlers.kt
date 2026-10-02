@@ -19,7 +19,7 @@ import org.slf4j.LoggerFactory
 private val log = LoggerFactory.getLogger("joinbot.Handlers")
 
 /** vendeli logs a handler's exception together with the whole update, and tinylog silences that logger; this keeps the class name. */
-private suspend inline fun guarded(what: String, block: () -> Unit) {
+private inline fun guarded(what: String, block: () -> Unit) {
     try {
         block()
     } catch (e: CancellationException) {
@@ -79,6 +79,7 @@ suspend fun fallback(update: ProcessedUpdate): Unit = guarded("update") {
                 Registry.bot.sendText(u.id, Texts.t(u.languageCode, T.HOW_TO_JOIN))
             }
         }
+
         is CallbackQueryUpdate -> {
             val q = update.callbackQuery
             val data = q.data.orEmpty()
@@ -86,10 +87,12 @@ suspend fun fallback(update: ProcessedUpdate): Unit = guarded("update") {
             when {
                 data.startsWith("f|") && messageId != null ->
                     Registry.flow.onCallback(q.from.id, q.id, data, q.from.languageCode, messageId)
+
                 data.startsWith("r|") -> Registry.review.onDecision(q.from.id, q.id, data)
                 else -> Registry.bot.answerCallback(q.id)
             }
         }
+
         else -> {} // join requests and bot-status updates also land here after their @UpdateHandler
     }
 }
