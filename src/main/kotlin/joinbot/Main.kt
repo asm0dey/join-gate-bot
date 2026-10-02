@@ -2,7 +2,6 @@ package joinbot
 
 import eu.vendeli.tgbot.TelegramBot
 import eu.vendeli.tgbot.api.botactions.getMe
-import eu.vendeli.tgbot.types.component.UpdateType
 import eu.vendeli.tgbot.types.component.isSuccess
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -13,10 +12,8 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import java.time.Clock
 import kotlin.system.exitProcess
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -24,14 +21,6 @@ import org.jetbrains.exposed.v1.jdbc.Database
 import org.slf4j.LoggerFactory
 
 private val logger = LoggerFactory.getLogger("joinbot.Main")
-
-/**
- * Telegram sends chat_join_request and my_chat_member only when they are asked for by name,
- * so this list is load-bearing: drop one and that update kind stops arriving, silently.
- */
-internal val ALLOWED_UPDATES = listOf(
-    UpdateType.MESSAGE, UpdateType.CALLBACK_QUERY, UpdateType.CHAT_JOIN_REQUEST, UpdateType.MY_CHAT_MEMBER,
-)
 
 suspend fun main(): Unit = coroutineScope {
     val cfg: Config
@@ -64,7 +53,6 @@ suspend fun main(): Unit = coroutineScope {
 
     val bot = TelegramBot(cfg.botToken, "joinbot") {
         commandParsing { restrictSpacesInCommands = true }
-        updatesListener { updatesPollingTimeout = 30 }
         httpClient {
             requestTimeoutMillis = 45_000L
             maxRequestRetry = 3
@@ -97,48 +85,39 @@ suspend fun main(): Unit = coroutineScope {
     val miniAppUrl = cfg.miniAppUrl?.takeIf {
         isValidMiniAppUrl(it) || run { logger.warn("join-gate-bot: MINIAPP_URL is not an absolute URL, mini app not started"); false }
     }
-    val menuOk = HttpClient(CIO).use { runCatching { setDefaultMenuButton(it, cfg.botToken, miniAppUrl) }.getOrDefault(false) }
-    if (menuOk) logger.info("join-gate-bot: menu button set") else logger.warn("join-gate-bot: menu button failed")
+    // Long-poll client: CIO's default 15 s request timeout is shorter than the 30 s poll.
+    val http = HttpClient(CIO) { engine { requestTimeout = 45_000 } }
+    suspend fun menuButton(url: String?) {
+        val ok = try {
+            setDefaultMenuButton(http, cfg.botToken, url)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+        if (ok) logger.info("join-gate-bot: menu button set") else logger.warn("join-gate-bot: menu button failed")
+    }
+    menuButton(miniAppUrl)
 
     if (miniAppUrl != null) {
         val deps = MiniAppDeps(InitDataVerifier(cfg.botToken)::verify, groups, forms, subs, admins, tg, users, clock)
-        // A bind failure must not take polling down with it.
-        runCatching { startMiniApp(cfg, deps) }
-            .onSuccess { logger.info("join-gate-bot: mini app listening") }
-            .onFailure { logger.error("join-gate-bot: mini app failed to start: {}", it.javaClass.simpleName) }
+        // A bind failure must not take polling down with it, nor leave a menu button pointing at nothing.
+        try {
+            startMiniApp(cfg, deps)
+            logger.info("join-gate-bot: mini app listening")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error("join-gate-bot: mini app failed to start: {}", e.javaClass.simpleName)
+            menuButton(null)
+        }
     }
 
     Purge(sessions, flow, subs, groups, clock).start(this)
 
     logger.info("join-gate-bot: listening")
-    // vendeli ends polling on any "fatal" error (a request timeout, an undecodable update). Restart it, but give up
-    // loudly after repeated failures with no healthy session in between. Never log e.message: request URLs carry the token.
-    var failures = 0
-    while (true) {
-        val started = System.nanoTime()
-        try {
-            bot.handleUpdates(ALLOWED_UPDATES)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            if (System.nanoTime() - started >= HEALTHY_SESSION.inWholeNanoseconds) failures = 0
-            failures++
-            val chain = generateSequence(e as Throwable) { it.cause }.joinToString(" <- ") { it.javaClass.simpleName }
-            logger.warn("join-gate-bot: listener error ($chain); failure $failures/$MAX_FAILURES")
-            runCatching { bot.update.stopListener() }
-            if (failures >= MAX_FAILURES) {
-                logger.error("join-gate-bot: giving up after $failures consecutive listener failures")
-                exitProcess(1)
-            }
-            delay(5.seconds)
-        }
-    }
+    poll(http, cfg.botToken, bot)
 }
-
-private const val MAX_FAILURES = 5
-
-/** Just above the 30 s long-poll: a session this long almost certainly completed a poll. */
-private val HEALTHY_SESSION = 35.seconds
 
 /** Three-way on purpose: "could not tell" must never be read as "rejected". */
 internal sealed interface TokenValidation {

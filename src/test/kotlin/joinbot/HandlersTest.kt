@@ -8,31 +8,18 @@ import eu.vendeli.tgbot.types.component.MyChatMemberUpdate
 import eu.vendeli.tgbot.types.component.ProcessedUpdate
 import eu.vendeli.tgbot.types.component.UpdateType
 import eu.vendeli.tgbot.utils.common.processUpdate
-import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonNamingStrategy
+import kotlinx.serialization.json.jsonArray
 
 private const val CHAT = -100L
 private const val U = 5L
 private const val U_CHAT = 55L
 private const val ADMIN = 1L
 
-/** Mirrors vendeli's internal `serde`, which getUpdates decodes with. */
-@OptIn(ExperimentalSerializationApi::class)
-private val tgJson = Json {
-    namingStrategy = JsonNamingStrategy.SnakeCase
-    ignoreUnknownKeys = true
-    explicitNulls = false
-    isLenient = true
-}
-
 @OptIn(KtGramInternal::class)
-private fun upd(json: String): ProcessedUpdate = tgJson.decodeFromString(Update.serializer(), json).processUpdate()
+private fun upd(json: String): ProcessedUpdate = TG_JSON.decodeFromString(Update.serializer(), json).processUpdate()
 
 private fun user(id: Long) = """{"id":$id,"is_bot":false,"first_name":"Ann","username":"ann","language_code":"en"}"""
 private fun chat(id: Long) = """{"id":$id,"type":"${if (id < 0) "supergroup" else "private"}","title":"Club"}"""
@@ -131,10 +118,21 @@ class HandlersTest : StringSpec({
         e.groups.get(-300)!!.active shouldBe true
     }
 
-    // R57: vendeli types `from` as non-null, so such an update fails decoding and no handler ever sees it.
-    // Telegram documents `from` as required here; Main's bounded restart loop is the backstop if it ever is not.
-    "a join request without from never reaches a handler" {
-        HandlerEnv("h-nofrom")
-        shouldThrow<SerializationException> { upd(joinJson("")) }
+    "a private message with no open form explains how to join" {
+        val e = HandlerEnv("h-nosession")
+        fallback(message(U, "hello"))
+        e.tg.sent.map { it.chatId to it.text } shouldBe listOf(U to Texts.t("en", T.HOW_TO_JOIN))
+    }
+
+    // R57: vendeli types `from` as non-null, so such an update cannot be decoded; polling must skip it, not wedge.
+    "an undecodable update is skipped and the offset moves past it" {
+        HandlerEnv("h-batch")
+        val good1 = """{"update_id":10,"message":{"message_id":7,"date":1,"chat":${chat(U)},"from":${user(U)},"text":"a"}}"""
+        val poison = joinJson("").replace("\"update_id\":3", "\"update_id\":11")
+        val good2 = good1.replace("\"update_id\":10", "\"update_id\":12")
+        val seen = mutableListOf<Int>()
+        val next = processBatch(TG_JSON.parseToJsonElement("[$good1,$poison,$good2]").jsonArray) { seen += it.updateId }
+        seen shouldBe listOf(10, 12)
+        next shouldBe 13L
     }
 })
