@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.jsonArray
 
@@ -153,7 +154,7 @@ class HandlersTest : StringSpec({
         withContext(Dispatchers.Default) {
             coroutineScope {
                 processBatch(TG_JSON.parseToJsonElement(batch).jsonArray) { u ->
-                    launchInOrder(last, orderKey(u)) { if (u.text == "m1") delay(300); seen += u.text }
+                    launchInOrder(last, orderKey(u)) { if (u.text == "m1") delay(300.milliseconds); seen += u.text }
                 }
             }
         }

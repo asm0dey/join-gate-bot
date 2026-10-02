@@ -8,9 +8,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
+import kotlin.time.Duration.Companion.hours
 
 private val IDLE_LIMIT = Duration.ofDays(7)
-private val PERIOD = Duration.ofHours(24)
+private val PERIOD = 24.hours
 
 /** Expires idle sessions and deletes submissions past each group's retention. */
 class Purge(
@@ -57,7 +58,7 @@ class Purge(
             } catch (e: Exception) {
                 log.warn("purge failed: {}", e.javaClass.simpleName)
             }
-            delay(PERIOD.toMillis())
+            delay(PERIOD)
         }
     }
 }
