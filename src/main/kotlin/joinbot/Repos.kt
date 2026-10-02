@@ -253,10 +253,14 @@ class SubmissionRepo(private val db: Database, private val crypto: Crypto) {
     /** Review messages go with it (FK cascade). */
     fun delete(id: Long) = transaction(db) { Submissions.deleteWhere { Submissions.id eq id }; Unit }
 
-    /** Decided (or expired) submissions created before [cutoff]; a PENDING one still waits for a reviewer. */
-    fun deleteOlderThan(chatId: Long, cutoff: Instant): Int = transaction(db) {
+    /**
+     * Submissions created before [cutoff]. With [keepPending] a PENDING one is spared: it still waits for a reviewer.
+     * An inactive group has none who can decide, so its PENDING rows age out like the rest.
+     */
+    fun deleteOlderThan(chatId: Long, cutoff: Instant, keepPending: Boolean): Int = transaction(db) {
         Submissions.deleteWhere {
-            (Submissions.chatId eq chatId) and (Submissions.createdAt less cutoff) and (Submissions.status neq Status.PENDING.name)
+            val old = (Submissions.chatId eq chatId) and (Submissions.createdAt less cutoff)
+            if (keepPending) old and (Submissions.status neq Status.PENDING.name) else old
         }
     }
 

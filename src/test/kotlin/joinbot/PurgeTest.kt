@@ -74,6 +74,18 @@ class PurgeTest : StringSpec({
         e.subs.get(old).shouldBeNull()
     }
 
+    "an old PENDING row survives in an active group and goes in an inactive one" {
+        val e = PurgeEnv("purge-pending")
+        e.groups.upsert(-1, "On", true); e.groups.setRetention(-1, 30)
+        e.groups.upsert(-2, "Off", false); e.groups.setRetention(-2, 30)
+        val old = e.clock.instant() - Duration.ofDays(31)
+        val kept = e.subs.create(-1, 5, 1, ann, null, Status.PENDING, old)
+        val gone = e.subs.create(-2, 5, 1, ann, null, Status.PENDING, old)
+        e.purge.runOnce()
+        e.subs.get(kept).shouldNotBeNull()
+        e.subs.get(gone).shouldBeNull()
+    }
+
     "expiry starts the next waiting session, even an idle one" {
         val e = PurgeEnv("purge-next")
         listOf(-1L, -2L).forEach { e.groups.upsert(it, "G$it", true); e.forms.save(it, Form("hi", listOf(Text("q", "Q?"))), 0, 9, e.clock.instant()) }

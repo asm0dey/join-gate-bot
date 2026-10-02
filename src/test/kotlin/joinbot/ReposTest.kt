@@ -97,7 +97,7 @@ class ReposTest : StringSpec({
         subs.get(subs.create(1, 5, null, p, null, Status.PENDING, now))!!.answers shouldBe null
     }
 
-    "deleteOlderThan spares that chat's PENDING rows and other chats, and cascades review messages" {
+    "deleteOlderThan spares other chats, PENDING rows unless told otherwise, and cascades review messages" {
         val db = testDb("deleteOlderThan only touches that chat"); group(db, 1, 2)
         val subs = SubmissionRepo(db, testCrypto())
         val old = now.minus(10, ChronoUnit.DAYS)
@@ -109,13 +109,16 @@ class ReposTest : StringSpec({
         subs.addReviewMessage(oldC1, 7, 100)
         subs.addReviewMessage(newC1, 7, 101)
         subs.reviewMessages(oldC1) shouldBe listOf(7L to 100L)
-        subs.deleteOlderThan(1, cutoff) shouldBe 1
+        subs.deleteOlderThan(1, cutoff, keepPending = true) shouldBe 1
         subs.get(oldC1) shouldBe null
         subs.get(newC1) shouldNotBe null
         subs.get(oldC2) shouldNotBe null
         subs.get(oldPending) shouldNotBe null
         subs.reviewMessages(oldC1) shouldBe emptyList()
         subs.reviewMessages(newC1) shouldBe listOf(7L to 101L)
+        subs.deleteOlderThan(1, cutoff, keepPending = false) shouldBe 1
+        subs.get(oldPending) shouldBe null
+        subs.get(newC1) shouldNotBe null
     }
 
     "active() returns the non-waiting session" {

@@ -35,10 +35,10 @@ class Purge(
                 log.warn("expiry failed: {}", e.javaClass.simpleName)
             }
         }
-        // inactive groups too: their submissions are still kept, and still age out
+        // inactive groups too: their submissions still age out, PENDING ones included, as nobody can decide them there
         for (g in groups.all()) {
             try {
-                subs.deleteOlderThan(g.chatId, now - Duration.ofDays(g.retentionDays.toLong()))
+                subs.deleteOlderThan(g.chatId, now - Duration.ofDays(g.retentionDays.toLong()), keepPending = g.active)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
