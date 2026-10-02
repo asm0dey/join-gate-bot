@@ -47,6 +47,9 @@ class FormSchemaTest : StringSpec({
         Pair(link, Input.Typed("javascript:alert(1)") to Check.Invalid(Reason.NOT_A_LINK)),
         Pair(link, Input.Typed("ftp://x.io") to Check.Invalid(Reason.NOT_A_LINK)),
         Pair(link, Input.Skip to Check.Ok("")),
+        Pair(link, Input.Typed("https://пример.рф/x") to Check.Ok("https://пример.рф/x")),
+        Pair(link, Input.Typed("https://x.io/путь") to Check.Ok("https://x.io/путь")),
+        Pair(link, Input.Typed("https:///nohost") to Check.Invalid(Reason.NOT_A_LINK)),
         Pair(consent, Input.Picked(0) to Check.Ok("✓")),
         Pair(consent, Input.Typed("yes") to Check.Invalid(Reason.WRONG_KIND)),
     ).forEach { (f, ir) -> validate(f, ir.first) shouldBe ir.second } }
@@ -66,6 +69,14 @@ class FormSchemaTest : StringSpec({
         Pair(Form("hi", listOf(radio.copy(options = List(21) { "o$it" }))), "a1: more than 20 options"),
         Pair(Form("hi", listOf(radio.copy(options = listOf("o".repeat(65))))), "a1: option label empty or longer than 64 chars"),
         Pair(Form("hi", listOf(text.copy(id = " "))), "form: empty field id"),
+        Pair(Form("hi", listOf(multi.copy(min = 4, max = null))), "a3: min exceeds option count"),
+        Pair(Form("hi", listOf(multi.copy(min = -1, max = null))), "a3: min and max must not be negative"),
+        Pair(Form("hi", listOf(multi.copy(min = null, max = -1))), "a3: min and max must not be negative"),
+        Pair(Form("hi", listOf(multi.copy(min = 0, max = 0))), "a3: max must be at least 1 when required"),
     ).forEach { (f, msg) -> validateForm(f) shouldContain msg } }
+    "limits are accepted exactly at the boundary" {
+        validateForm(Form("w".repeat(2000), List(50) { Text("t$it", "p".repeat(1000)) })) shouldBe emptyList()
+        validateForm(Form("hi", listOf(Radio("r", "?", List(20) { "o".repeat(64) })))) shouldBe emptyList()
+    }
     "valid spec example has no errors" { validateForm(FormJson.decodeFromString(SPEC_EXAMPLE_JSON)) shouldBe emptyList() }
 })

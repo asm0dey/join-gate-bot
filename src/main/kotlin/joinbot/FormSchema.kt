@@ -1,5 +1,6 @@
 package joinbot
 
+import java.net.IDN
 import java.net.URI
 import java.net.URISyntaxException
 import kotlinx.serialization.SerialName
@@ -107,8 +108,10 @@ private fun typed(field: Field, raw: String, maxLen: Int, next: (String) -> Chec
 
 private fun isHttpUrl(s: String): Boolean = try {
     val u = URI(s)
-    u.scheme?.lowercase() in setOf("http", "https") && !u.host.isNullOrEmpty()
-} catch (_: URISyntaxException) { false }
+    // host is null for internationalized names (https://пример.рф), so fall back to the authority minus userinfo and port
+    val host = u.host ?: u.authority?.substringAfterLast('@')?.substringBefore(':')
+    u.scheme?.lowercase() in setOf("http", "https") && !host.isNullOrEmpty() && IDN.toASCII(host).isNotEmpty()
+} catch (_: URISyntaxException) { false } catch (_: IllegalArgumentException) { false }
 
 /** Every validateForm message lives here; Task 12 mirrors these strings in TypeScript. */
 object FormErrors {
@@ -124,6 +127,9 @@ object FormErrors {
     const val TOO_MANY_OPTIONS = "more than $MAX_OPTIONS options"
     const val BAD_OPTION_LABEL = "option label empty or longer than $MAX_OPTION_LEN chars"
     const val MIN_GT_MAX = "min > max"
+    const val MIN_GT_OPTIONS = "min exceeds option count"
+    const val NEGATIVE_LIMIT = "min and max must not be negative"
+    const val MAX_ZERO_REQUIRED = "max must be at least 1 when required"
     const val BAD_MAX_LEN = "maxLen must be 1..$TEXT_MAX"
 }
 
@@ -145,7 +151,12 @@ fun validateForm(form: Form): List<String> = buildList {
             if (options.any { it.isBlank() || it.length > MAX_OPTION_LEN }) err(FormErrors.BAD_OPTION_LABEL)
         }
         when (f) {
-            is Multi -> if (f.min != null && f.max != null && f.min > f.max) err(FormErrors.MIN_GT_MAX)
+            is Multi -> {
+                if (f.min != null && f.max != null && f.min > f.max) err(FormErrors.MIN_GT_MAX)
+                if (f.min != null && f.min > f.options.size) err(FormErrors.MIN_GT_OPTIONS)
+                if ((f.min ?: 0) < 0 || (f.max ?: 0) < 0) err(FormErrors.NEGATIVE_LIMIT)
+                if (f.required && f.max == 0) err(FormErrors.MAX_ZERO_REQUIRED)
+            }
             is IntField -> if (f.min != null && f.max != null && f.min > f.max) err(FormErrors.MIN_GT_MAX)
             is Text -> if (f.maxLen !in 1..TEXT_MAX) err(FormErrors.BAD_MAX_LEN)
             else -> {}
