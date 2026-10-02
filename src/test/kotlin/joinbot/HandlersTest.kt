@@ -11,6 +11,13 @@ import eu.vendeli.tgbot.utils.common.processUpdate
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
+import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.jsonArray
 
 private const val CHAT = -100L
@@ -134,5 +141,23 @@ class HandlersTest : StringSpec({
         val next = processBatch(TG_JSON.parseToJsonElement("[$good1,$poison,$good2]").jsonArray) { seen += it.updateId }
         seen shouldBe listOf(10, 12)
         next shouldBe 13L
+    }
+
+    "one sender's updates are handled in arrival order, other senders don't wait" {
+        fun msg(id: Int, from: Long, text: String) =
+            """{"update_id":$id,"message":{"message_id":$id,"date":1,"chat":${chat(from)},"from":${user(from)},"text":"$text"}}"""
+        val batch = listOf(msg(1, U, "m1"), msg(2, U, "m2"), msg(3, 6, "other"), msg(4, U, "m3")).joinToString(",", "[", "]")
+        val seen = Collections.synchronizedList(mutableListOf<String>())
+        val last = ConcurrentHashMap<Long, Job>()
+        withContext(Dispatchers.Default) {
+            coroutineScope {
+                processBatch(TG_JSON.parseToJsonElement(batch).jsonArray) { u ->
+                    launchInOrder(last, orderKey(u)) { if (u.text == "m1") delay(300); seen += u.text }
+                }
+            }
+        }
+        seen.filter { it.startsWith("m") } shouldBe listOf("m1", "m2", "m3")
+        seen.first() shouldBe "other"
+        last.isEmpty() shouldBe true
     }
 })

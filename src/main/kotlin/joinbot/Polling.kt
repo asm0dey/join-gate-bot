@@ -3,8 +3,10 @@ package joinbot
 import eu.vendeli.tgbot.TelegramBot
 import eu.vendeli.tgbot.annotations.internal.KtGramInternal
 import eu.vendeli.tgbot.types.common.Update
+import eu.vendeli.tgbot.types.component.ChatReference
 import eu.vendeli.tgbot.types.component.ProcessedUpdate
 import eu.vendeli.tgbot.types.component.UpdateType
+import eu.vendeli.tgbot.types.component.UserReference
 import eu.vendeli.tgbot.utils.common.processUpdate
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
@@ -13,9 +15,13 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.system.exitProcess
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
@@ -72,6 +78,27 @@ internal suspend fun processBatch(json: JsonArray, dispatch: suspend (ProcessedU
     return next
 }
 
+/** Whose order an update belongs to: its sender, else its chat; null when it has neither. */
+internal fun orderKey(u: ProcessedUpdate): Long? =
+    // vendeli's `user` getters can throw (`from!!`) on shapes it decoded anyway
+    runCatching { (u as? UserReference)?.user?.id ?: (u as? ChatReference)?.chat?.id }.getOrNull()
+
+/**
+ * Launches [block] once the job launched before it for [key] has finished, so one user's updates are handled in
+ * arrival order while different users still run concurrently; a null [key] runs unchained. [last] holds the newest
+ * job per key and loses it when that job finishes. Call from one coroutine only (the poll loop).
+ */
+internal fun CoroutineScope.launchInOrder(last: ConcurrentHashMap<Long, Job>, key: Long?, block: suspend () -> Unit): Job {
+    if (key == null) return launch { block() }
+    val prev = last[key]
+    // lazy, so the completion hook is registered before the job can finish
+    val job = launch(start = CoroutineStart.LAZY) { prev?.join(); block() }
+    last[key] = job
+    job.invokeOnCompletion { last.remove(key, job) }
+    job.start()
+    return job
+}
+
 private val BACKOFF = 5.seconds
 
 /**
@@ -81,6 +108,7 @@ private val BACKOFF = 5.seconds
 internal suspend fun poll(client: HttpClient, token: String, bot: TelegramBot): Unit = supervisorScope {
     val allowed = TG_JSON.encodeToString(ListSerializer(UpdateType.serializer()), ALLOWED_UPDATES)
     var offset = 0L
+    val last = ConcurrentHashMap<Long, Job>()
     while (true) {
         val response: HttpResponse
         val result: JsonArray
@@ -108,7 +136,7 @@ internal suspend fun poll(client: HttpClient, token: String, bot: TelegramBot): 
             continue
         }
         processBatch(result) { update ->
-            launch {
+            launchInOrder(last, orderKey(update)) {
                 try {
                     bot.update.handle(update)
                 } catch (e: CancellationException) {
