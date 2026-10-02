@@ -34,4 +34,16 @@ class GroupRegistryTest : StringSpec({
         tg.sent.map { it.chatId to it.text }.toSet() shouldBe
             setOf(1L to Texts.t("ru", T.GROUP_GONE), 2L to Texts.t(null, T.GROUP_GONE))
     }
+
+    "demoted but still admin: sessions closed, applicants and group told" {
+        val db = testDb("registry demote"); val tg = FakeTg(); val groups = GroupRepo(db)
+        val sessions = SessionRepo(db, testCrypto())
+        val reg = GroupRegistry(groups, sessions, BotUserRepo(db), tg)
+        reg.onBotStatus(-100, "G", isAdmin = true, canInvite = true)
+        sessions.put(Session(1, -100, 1, 0, SessionState(Profile("A", "a")), null, Instant.now().truncatedTo(ChronoUnit.MICROS)))
+        reg.onBotStatus(-100, "G", isAdmin = true, canInvite = false)
+        sessions.get(1, -100) shouldBe null
+        tg.sent.map { it.chatId to it.text }.toSet() shouldBe
+            setOf(1L to Texts.t(null, T.GROUP_GONE), -100L to Texts.t(null, T.NEEDS_INVITE_RIGHT))
+    }
 })

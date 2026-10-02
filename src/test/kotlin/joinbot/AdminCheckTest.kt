@@ -48,4 +48,12 @@ class AdminCheckTest : StringSpec({
         check.canDecide(-100, 1) shouldBe false
         check.deciders(-100) shouldBe emptyList()
     }
+
+    "a failed admins() lookup is not cached" {
+        val fake = FakeTg()
+        val check = AdminCheck(fake, TestClock())
+        check.canDecide(-100, 1) shouldBe false
+        fake.adminsOf[-100] = listOf(Admin(1, "a", false, true))
+        check.canDecide(-100, 1) shouldBe true
+    }
 })
