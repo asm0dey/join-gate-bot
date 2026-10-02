@@ -3,7 +3,8 @@ services:
     image: ghcr.io/asm0dey/join-gate-bot:latest
     env_file: .env
     ports:
-      - "8080:8080"
+      # loopback only: the HTTPS reverse proxy in front of the Mini App reaches it here
+      - "127.0.0.1:8080:8080"
     volumes:
       - data:/app/data
     restart: unless-stopped
