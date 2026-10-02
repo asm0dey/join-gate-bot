@@ -1,5 +1,6 @@
 package joinbot
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -59,11 +60,25 @@ class VendeliTgTest : StringSpec({
         calls.map { it.path } shouldBe listOf("editMessageText", "answerCallbackQuery", "sendDocument")
         calls[1].body shouldContain "\"show_alert\":true"
     }
+    "keyboard is exactly one array per row" {
+        val calls = mutableListOf<Call>()
+        VendeliTg(recordingBot(calls)).send(5, "x", listOf(listOf(Button("A", "a"), Button("B", "b")), listOf(Button("C", "c"))))
+        calls.single().body shouldContain """"inline_keyboard":[[{"text":"A","callback_data":"a"},{"text":"B","callback_data":"b"}],[{"text":"C","callback_data":"c"}]]"""
+    }
+    "answer sends no chat id" {
+        val calls = mutableListOf<Call>()
+        VendeliTg(recordingBot(calls)).answer("cb1", "hi")
+        calls.single().body shouldNotContain "chat_id"
+        calls.single().body shouldContain "callback_query_id"
+    }
     "failed admins lookup is null" {
         VendeliTg(failingBot(400, "Bad Request")).admins(-100) shouldBe null
     }
     "every T has en and ru" {
-        T.entries.forEach { Texts.t("ru", it).shouldNotBeBlank(); Texts.t(null, it).shouldNotBeBlank() }
+        T.entries.forEach {
+            val a = expectedArgs[it] ?: emptyArray()
+            Texts.t("ru", it, *a).shouldNotBeBlank(); Texts.t(null, it, *a).shouldNotBeBlank()
+        }
     }
     "every T formats with its expected args" {
         T.entries.forEach { k ->
@@ -71,6 +86,9 @@ class VendeliTgTest : StringSpec({
             Texts.t("ru", k, *a).shouldNotBeBlank()
             Texts.t("en", k, *a).shouldNotContain("%")
         }
+    }
+    "forgotten args throw instead of leaking the template" {
+        shouldThrow<java.util.MissingFormatArgumentException> { Texts.t(null, T.NUDGE) }
     }
     "every Reason has a text" { Reason.entries.forEach { Texts.t(null, it.text()).shouldNotBeBlank() } }
 })

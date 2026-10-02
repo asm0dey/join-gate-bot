@@ -1,6 +1,7 @@
 package joinbot
 
 import eu.vendeli.tgbot.TelegramBot
+import eu.vendeli.tgbot.annotations.internal.KtGramInternal
 import eu.vendeli.tgbot.api.answer.answerCallbackQuery
 import eu.vendeli.tgbot.api.chat.approveChatJoinRequest
 import eu.vendeli.tgbot.api.chat.declineChatJoinRequest
@@ -11,6 +12,7 @@ import eu.vendeli.tgbot.api.message.message
 import eu.vendeli.tgbot.types.chat.ChatMember
 import eu.vendeli.tgbot.types.component.InputFile
 import eu.vendeli.tgbot.types.component.Response
+import eu.vendeli.tgbot.types.msg.Message
 import eu.vendeli.tgbot.utils.builders.InlineKeyboardMarkupBuilder
 import kotlinx.coroutines.CancellationException
 
@@ -36,7 +38,7 @@ class VendeliTg(private val bot: TelegramBot) : Tg {
     }
 
     private fun Response<*>?.toSent(): Sent = when {
-        this is Response.Success -> Sent.Ok((result as eu.vendeli.tgbot.types.msg.Message).messageId)
+        this is Response.Success -> Sent.Ok((result as? Message)?.messageId ?: return Sent.Failed)
         this is Response.Failure && errorCode == 403 -> Sent.Forbidden
         else -> Sent.Failed
     }
@@ -52,9 +54,12 @@ class VendeliTg(private val bot: TelegramBot) : Tg {
         call { action.sendReturning(chatId, bot).await() }
     }
 
+    @OptIn(KtGramInternal::class)
     override suspend fun answer(callbackId: String, text: String?, alert: Boolean) {
         val action = answerCallbackQuery(callbackId).options { this.text = text; showAlert = alert }
-        call { action.sendReturning(0L, bot).await() }
+        // answerCallbackQuery takes no chat, but vendeli 9.6 types it as a chat Action whose public send adds chat_id.
+        // doRequestReturning is the only chat-less path; VendeliTgTest pins the body if a vendeli bump changes it.
+        call { action.run { doRequestReturning(bot) }.await() }
     }
 
     override suspend fun approve(chatId: Long, userId: Long): Decision =

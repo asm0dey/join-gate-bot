@@ -1,10 +1,12 @@
 package joinbot
 
+import java.util.Locale
+
 // Keys with String.format arguments (all others take none):
 //   NUDGE(count: Int)
 //   DECIDED_BY_APPROVED(name), DECIDED_BY_REJECTED(name), ALREADY_DECIDED(name)
 //   REVIEW_HEADER(applicantName, groupTitle), REVIEW_UNREACHABLE(applicantName)
-// With no args the template is returned unformatted. Avoid a literal percent sign in any text.
+// Always formatted, so a forgotten arg throws. Avoid a literal percent sign in any text.
 
 enum class T {
     WELCOME_SKIP, SKIP, OTHER, DONE, AGREE, DISAGREE, SUBMIT, START_OVER, SUMMARY_HEADER, INVALID_REQUIRED, INVALID_TOO_LONG,
@@ -104,7 +106,7 @@ object Texts {
     /** `ru*` language codes get Russian; everything else, including null, gets English. */
     fun t(lang: String?, key: T, vararg args: Any): String {
         val template = (if (lang?.startsWith("ru") == true) ru else en).getValue(key)
-        return if (args.isEmpty()) template else template.format(*args)
+        return template.format(Locale.ROOT, *args)
     }
 }
 
