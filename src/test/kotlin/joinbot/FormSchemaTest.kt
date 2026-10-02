@@ -65,6 +65,7 @@ class FormSchemaTest : StringSpec({
         Pair(Form("hi", listOf(text.copy(prompt = " "))), "a4: empty prompt"),
         Pair(Form("hi", List(51) { Text("t$it", "?") }), "form: more than 50 fields"),
         Pair(Form("h".repeat(2001), listOf(text)), "welcome: longer than 2000 chars"),
+        Pair(Form(" \n", listOf(text)), "welcome: empty"),
         Pair(Form("hi", listOf(text.copy(prompt = "p".repeat(1001)))), "a4: prompt longer than 1000 chars"),
         Pair(Form("hi", listOf(radio.copy(options = List(21) { "o$it" }))), "a1: more than 20 options"),
         Pair(Form("hi", listOf(radio.copy(options = listOf("o".repeat(65))))), "a1: option label empty or longer than 64 chars"),

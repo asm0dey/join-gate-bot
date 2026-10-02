@@ -67,7 +67,8 @@ export const updateField = (f: Form, i: number, patch: Partial<Field>): Form =>
 export function validate(f: Form): string[] {
   const out: string[] = []
   if (f.fields.length > MAX_FIELDS) out.push(`form: more than ${MAX_FIELDS} fields`)
-  if (f.welcome.length > MAX_WELCOME) out.push(`welcome: longer than ${MAX_WELCOME} chars`)
+  if (f.welcome.trim() === '') out.push('welcome: empty')
+  else if (f.welcome.length > MAX_WELCOME) out.push(`welcome: longer than ${MAX_WELCOME} chars`)
   const seen = new Set<string>()
   for (const x of f.fields) {
     if (x.id.trim() === '') { out.push('form: empty field id'); continue }

@@ -33,7 +33,7 @@ test('remove and update', () => {
   expect(f.fields[0].prompt).toBe('')
 })
 
-const form = (...fields: any[]): Form => ({ welcome: '', fields })
+const form = (...fields: any[]): Form => ({ welcome: 'w', fields })
 
 test('validate mirrors server messages', () => {
   expect(validate(form(
@@ -49,6 +49,7 @@ test('validate mirrors server messages', () => {
     'form: empty field id',
   ])
   expect(validate({ welcome: 'x'.repeat(2001), fields: [] })).toEqual(['welcome: longer than 2000 chars'])
+  expect(validate({ welcome: ' \n', fields: [] })).toEqual(['welcome: empty'])
   const m = { id: 'm', type: 'multi', prompt: 'p', options: ['a'], max: 0, required: true } as Multi
   expect(validate(form(m))).toEqual(['m: max must be at least 1 when required'])
 })

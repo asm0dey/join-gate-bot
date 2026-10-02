@@ -160,9 +160,10 @@ class ApplicantFlow(
         val form = formOf(s) ?: return false
         val start = fresh(s)
         put(start)
-        var welcome = form.welcome
-        if (form.fields.any { !it.required }) welcome += "\n\n" + Texts.t(s.lang, T.WELCOME_SKIP)
-        if (tg.send(dest, welcome) !is Sent.Ok) {
+        // a blank welcome only survives in forms saved before validateForm required one; Telegram rejects empty text
+        val welcome = listOfNotNull(form.welcome.takeIf { it.isNotBlank() },
+            Texts.t(s.lang, T.WELCOME_SKIP).takeIf { form.fields.any { !it.required } }).joinToString("\n\n")
+        if (welcome.isNotEmpty() && tg.send(dest, welcome) !is Sent.Ok) {
             unreachable(start)
             return false
         }

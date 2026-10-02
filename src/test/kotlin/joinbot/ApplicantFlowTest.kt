@@ -84,6 +84,21 @@ class ApplicantFlowTest : StringSpec({
         e.session()!!.step shouldBe 0
     }
 
+    "a legacy blank welcome is not sent" {
+        val e = FlowEnv("af-blank-welcome")
+        e.group(CHAT2, Form(" ", listOf(Text("x1", "One"))))
+        e.flow.onJoinRequest(CHAT2, U, U_CHAT, ann, "en")
+        e.tg.sent.map { it.text } shouldBe listOf("One")
+        e.session(CHAT2)!!.step shouldBe 0
+    }
+
+    "a legacy blank welcome with optional fields sends only the skip hint" {
+        val e = FlowEnv("af-blank-welcome-skip")
+        e.group(CHAT2, Form("", listOf(Text("x1", "One", required = false))))
+        e.flow.onJoinRequest(CHAT2, U, U_CHAT, ann, "en")
+        e.tg.sent.map { it.text } shouldBe listOf(en(T.WELCOME_SKIP), "One")
+    }
+
     "no active group or no form → ignored" {
         val e = FlowEnv("af-ignore")
         e.groups.upsert(CHAT2, "NoForm", true)

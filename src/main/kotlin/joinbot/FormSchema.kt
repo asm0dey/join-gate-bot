@@ -119,6 +119,7 @@ object FormErrors {
     const val WELCOME = "welcome"
     const val TOO_MANY_FIELDS = "more than $MAX_FIELDS fields"
     const val WELCOME_TOO_LONG = "longer than $MAX_WELCOME chars"
+    const val WELCOME_EMPTY = "empty"
     const val EMPTY_ID = "empty field id"
     const val DUPLICATE_ID = "duplicate id"
     const val EMPTY_PROMPT = "empty prompt"
@@ -135,7 +136,9 @@ object FormErrors {
 
 fun validateForm(form: Form): List<String> = buildList {
     if (form.fields.size > MAX_FIELDS) add("${FormErrors.FORM}: ${FormErrors.TOO_MANY_FIELDS}")
-    if (form.welcome.length > MAX_WELCOME) add("${FormErrors.WELCOME}: ${FormErrors.WELCOME_TOO_LONG}")
+    // the welcome is its own message, and Telegram rejects an empty one
+    if (form.welcome.isBlank()) add("${FormErrors.WELCOME}: ${FormErrors.WELCOME_EMPTY}")
+    else if (form.welcome.length > MAX_WELCOME) add("${FormErrors.WELCOME}: ${FormErrors.WELCOME_TOO_LONG}")
     val seen = HashSet<String>()
     for (f in form.fields) {
         if (f.id.isBlank()) { add("${FormErrors.FORM}: ${FormErrors.EMPTY_ID}"); continue }
