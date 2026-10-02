@@ -337,6 +337,19 @@ class ApplicantFlowTest : StringSpec({
         e.last().buttons.flatten().first().data shouldBe "f|$CHAT2|0|p|0"
     }
 
+    "closeForChat tells the user and starts their next waiting session" {
+        val e = FlowEnv("af-close")
+        e.group(CHAT2)
+        e.join(CHAT); e.join(CHAT2)
+        e.flow.closeForChat(CHAT)
+        e.session(CHAT).shouldBeNull()
+        e.session(CHAT2)!!.step shouldBe 0
+        e.toUser().takeLast(3).map { it.text } shouldBe
+            listOf(en(T.GROUP_GONE), "${form.welcome}\n\n${en(T.WELCOME_SKIP)}", "Where do you live?")
+        e.flow.closeForChat(CHAT)
+        e.session(CHAT2)!!.step shouldBe 0
+    }
+
     "invalid input does not touch touched_at" {
         val e = FlowEnv("af-touch-invalid")
         e.join(); e.fillTo(4)

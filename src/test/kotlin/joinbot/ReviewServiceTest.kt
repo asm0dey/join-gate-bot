@@ -136,7 +136,7 @@ class ReviewServiceTest : StringSpec({
         e.groups.upsert(CHAT, "Club", false)
         e.review.onDecision(1, "c1", "r|$id|a")
         e.subs.get(id)!!.status shouldBe Status.PENDING
-        e.alerts("c1") shouldBe listOf("answer c1 ${Texts.t("en", T.GROUP_GONE)} alert")
+        e.alerts("c1") shouldBe listOf("answer c1 ${Texts.t("en", T.REVIEW_SUSPENDED)} alert")
     }
 
     "bad or stale callback data" {
@@ -232,5 +232,21 @@ class ReviewServiceTest : StringSpec({
         text shouldNotContain "Question 10:"
         e.review.onDecision(1, "c1", "r|$id|a")
         e.tg.edits.single().text.let { (it.length <= 4096) shouldBe true; it shouldEndWith Texts.t("en", T.DECIDED_BY_APPROVED, "A1") }
+    }
+
+    "suspended long review stays within 4096 in the owner's language, without buttons" {
+        val e = Env("suspend long")
+        e.group(CHAT, admin(1))
+        e.users.started(1, "ru")
+        val answers = mapOf("q1" to "x".repeat(3000), "q2" to "y".repeat(3000))
+        val id = e.subs.create(CHAT, APPLICANT, 1, ann, answers, Status.PENDING, e.clock.instant())
+        e.review.submit(id)
+        e.review.suspendChat(CHAT)
+        e.tg.edits.single().let {
+            it.messageId shouldBe e.subs.reviewMessages(id).single().second
+            (it.text.length <= 4096) shouldBe true
+            it.text shouldEndWith "\n\n" + Texts.t("ru", T.REVIEW_SUSPENDED)
+            it.buttons shouldBe emptyList()
+        }
     }
 })

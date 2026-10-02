@@ -34,7 +34,7 @@ class ReviewService(
         val status = when (parts.getOrNull(2)) { "a" -> Status.APPROVED; "j" -> Status.REJECTED; else -> null }
         val s = parts.getOrNull(1)?.toLongOrNull()?.let(subs::get)
         if (parts.size != 3 || parts[0] != "r" || status == null || s == null) return alert(T.STALE_BUTTON)
-        if (groups.get(s.chatId)?.active != true) return alert(T.GROUP_GONE)
+        if (groups.get(s.chatId)?.active != true) return alert(T.REVIEW_SUSPENDED)
         if (!admins.canDecide(s.chatId, adminId, fresh = true)) return alert(T.NOT_ADMIN_ANYMORE)
 
         // The conditional UPDATE is the only arbiter between simultaneous clicks.
@@ -78,6 +78,20 @@ class ReviewService(
             if (!sendCopy(s, s.formVersion?.let { forms.version(s.chatId, it) }, adminId) && !users.dmOk(adminId)) return
         }
     }
+
+    /** The bot lost the invite right: every review copy of a PENDING submission in [chatId] loses its buttons. */
+    suspend fun suspendChat(chatId: Long) {
+        for (s in subs.list(chatId, Status.PENDING)) {
+            val form = s.formVersion?.let { forms.version(chatId, it) }
+            for ((adminId, messageId) in subs.reviewMessages(s.id)) {
+                val l = users.lang(adminId)
+                tg.edit(adminId, messageId, fit(renderReview(s, form, l), "\n\n" + Texts.t(l, T.REVIEW_SUSPENDED)))
+            }
+        }
+    }
+
+    /** The right is back: fresh copies with buttons for every PENDING submission; old copies were suspended, so none is skipped. */
+    suspend fun resumeChat(chatId: Long) = subs.list(chatId, Status.PENDING).forEach { submit(it.id) }
 
     fun renderReview(s: Submission, form: Form?, lang: String?): String = buildString {
         append(Texts.t(lang, T.REVIEW_HEADER, s.profile.name, groups.get(s.chatId)?.title.orEmpty()))

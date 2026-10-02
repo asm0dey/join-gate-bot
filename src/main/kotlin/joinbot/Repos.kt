@@ -135,11 +135,8 @@ class SessionRepo(private val db: Database, private val crypto: Crypto) {
         Unit
     }
 
-    /** Deletes every session of the chat and returns what was deleted. */
-    fun deleteForChat(chatId: Long): List<Session> = transaction(db) {
-        val gone = FormSessions.selectAll().where { FormSessions.chatId eq chatId }.map(::session)
-        FormSessions.deleteWhere { FormSessions.chatId eq chatId }
-        gone
+    fun forChat(chatId: Long): List<Session> = transaction(db) {
+        FormSessions.selectAll().where { FormSessions.chatId eq chatId }.map(::session)
     }
 
     fun idleSince(cutoff: Instant): List<Session> = transaction(db) {

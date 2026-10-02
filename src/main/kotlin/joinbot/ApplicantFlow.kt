@@ -131,6 +131,22 @@ class ApplicantFlow(
         tg.send(s.userId, Texts.t(s.lang, key))
     }
 
+    /** The group can no longer take requests: closes every form for [chatId] and tells its applicants. Idempotent. */
+    suspend fun closeForChat(chatId: Long) {
+        for (userId in sessions.forChat(chatId).map { it.userId }) locked(userId) {
+            val s = sessions.get(userId, chatId) ?: return@locked
+            sessions.delete(userId, chatId)
+            try {
+                tg.send(userId, Texts.t(s.lang, T.GROUP_GONE))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.warn("group-gone notice failed: {}", e.javaClass.simpleName)
+            }
+            if (s.step != WAITING) startNext(userId)
+        }
+    }
+
     private fun Session.withLang(lang: String?) = if (lang == null) this else copy(lang = lang)
 
     private fun formOf(s: Session) = forms.version(s.chatId, s.formVersion)

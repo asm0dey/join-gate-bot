@@ -9,6 +9,7 @@ import io.kotest.matchers.string.shouldNotContain
 
 private val expectedArgs: Map<T, Array<Any>> = mapOf(
     T.NUDGE to arrayOf(3),
+    T.GROUP_HANDOFF to arrayOf(2),
     T.DECIDED_BY_APPROVED to arrayOf("Ann"),
     T.DECIDED_BY_REJECTED to arrayOf("Ann"),
     T.ALREADY_DECIDED to arrayOf("Ann"),

@@ -3,7 +3,7 @@ package joinbot
 import java.util.Locale
 
 // Keys with String.format arguments (all others take none):
-//   NUDGE(count: Int)
+//   NUDGE(count: Int), GROUP_HANDOFF(count: Int)
 //   DECIDED_BY_APPROVED(name), DECIDED_BY_REJECTED(name), ALREADY_DECIDED(name)
 //   REVIEW_HEADER(applicantName, groupTitle), REVIEW_UNREACHABLE(applicantName)
 // AN_ADMIN is the decider name when they are no longer an admin.
@@ -15,6 +15,7 @@ enum class T {
     TYPE_OTHER, SUBMITTED, DECLINED_CONSENT, EXPIRED, GROUP_GONE, STALE_BUTTON, HOW_TO_JOIN, APPROVED_USER, REJECTED_USER,
     REVIEW_HEADER, REVIEW_UNREACHABLE, APPROVE, REJECT, DECIDED_BY_APPROVED, DECIDED_BY_REJECTED, ALREADY_DECIDED, NOT_ADMIN_ANYMORE,
     TRY_AGAIN, WITHDRAWN, AN_ADMIN, NUDGE, NEEDS_INVITE_RIGHT, EXPORT_READY,
+    MANUAL_REVIEW, REVIEW_SUSPENDED, GROUP_HANDOFF,
 }
 
 private val en = mapOf(
@@ -40,7 +41,7 @@ private val en = mapOf(
     T.SUBMITTED to "Thanks! Your answers were sent to the admins. You will get a message when they decide.",
     T.DECLINED_CONSENT to "Your join request was declined because you did not agree. You can request to join again.",
     T.EXPIRED to "This form timed out and your join request was declined. Request to join again to start over.",
-    T.GROUP_GONE to "This group no longer uses this form.",
+    T.GROUP_GONE to "This form is closed. The group's admins will review your join request directly in Telegram.",
     T.STALE_BUTTON to "This button is out of date.",
     T.HOW_TO_JOIN to "Request to join a group, and I will send you its questions here.",
     T.APPROVED_USER to "You were approved. Welcome!",
@@ -59,6 +60,9 @@ private val en = mapOf(
     T.NUDGE to "%d join requests are waiting. Admins, please open a chat with this bot and press Start.",
     T.NEEDS_INVITE_RIGHT to "I need the Invite users right to handle join requests.",
     T.EXPORT_READY to "Your export is ready.",
+    T.MANUAL_REVIEW to "The group's admins will review your join request directly in Telegram.",
+    T.REVIEW_SUSPENDED to "I can no longer approve requests here — use the group's Join requests list.",
+    T.GROUP_HANDOFF to "I can't approve join requests any more. %d request(s) wait in this group's Join requests list.",
 )
 
 private val ru = mapOf(
@@ -84,7 +88,7 @@ private val ru = mapOf(
     T.SUBMITTED to "Спасибо! Ответы отправлены администраторам. Когда они решат, вам придёт сообщение.",
     T.DECLINED_CONSENT to "Заявка отклонена, потому что вы не согласились. Можно подать заявку снова.",
     T.EXPIRED to "Время на анкету вышло, заявка отклонена. Подайте заявку снова, чтобы начать заново.",
-    T.GROUP_GONE to "Эта группа больше не использует анкету.",
+    T.GROUP_GONE to "Анкета закрыта. Администраторы группы рассмотрят вашу заявку прямо в Telegram.",
     T.STALE_BUTTON to "Эта кнопка устарела.",
     T.HOW_TO_JOIN to "Подайте заявку на вступление в группу, и я пришлю сюда её вопросы.",
     T.APPROVED_USER to "Вас приняли. Добро пожаловать!",
@@ -103,6 +107,9 @@ private val ru = mapOf(
     T.NUDGE to "Заявок на вступление в ожидании: %d. Администраторы, откройте чат с этим ботом и нажмите Start.",
     T.NEEDS_INVITE_RIGHT to "Мне нужно право «Приглашать пользователей», чтобы обрабатывать заявки.",
     T.EXPORT_READY to "Экспорт готов.",
+    T.MANUAL_REVIEW to "Администраторы группы рассмотрят вашу заявку прямо в Telegram.",
+    T.REVIEW_SUSPENDED to "Я больше не могу принимать заявки здесь — используйте список «Заявки на вступление» в группе.",
+    T.GROUP_HANDOFF to "Я больше не могу принимать заявки на вступление. В списке «Заявки на вступление» этой группы ждут заявок: %d.",
 )
 
 object Texts {
