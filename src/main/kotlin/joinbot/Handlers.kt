@@ -8,6 +8,7 @@ import eu.vendeli.tgbot.types.chat.ChatMember
 import eu.vendeli.tgbot.types.chat.ChatType
 import eu.vendeli.tgbot.types.component.CallbackQueryUpdate
 import eu.vendeli.tgbot.types.component.ChatJoinRequestUpdate
+import eu.vendeli.tgbot.types.component.MessageKind
 import eu.vendeli.tgbot.types.component.MessageUpdate
 import eu.vendeli.tgbot.types.component.MyChatMemberUpdate
 import eu.vendeli.tgbot.types.component.ProcessedUpdate
@@ -55,6 +56,16 @@ suspend fun botStatus(update: MyChatMemberUpdate): Unit = guarded("bot status") 
     if (m.chat.type != ChatType.Group && m.chat.type != ChatType.Supergroup) return
     val admin = m.newChatMember as? ChatMember.Administrator
     Registry.registry.onBotStatus(m.chat.id, m.chat.title.orEmpty(), admin != null, admin?.canInviteUsers == true)
+}
+
+/**
+ * Telegram announces a group's upgrade to a supergroup as an ordinary message in the old chat carrying
+ * `migrate_to_chat_id`; there is no dedicated update type. Nothing is said back.
+ */
+@UpdateHandler([UpdateType.MESSAGE], messageKind = [MessageKind.MIGRATE_TO_CHAT])
+suspend fun chatMigrated(update: ProcessedUpdate): Unit = guarded("migration") {
+    val m = (update as? MessageUpdate)?.message ?: return
+    Registry.registry.onMigrated(m.chat.id, m.migrateToChatId ?: return)
 }
 
 /** Everything no command matched: form answers in private, and every button. Group chatter is ignored. */

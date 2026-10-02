@@ -66,6 +66,30 @@ class GroupRepo(private val db: Database) {
         Unit
     }
 
+    /**
+     * A group upgraded to a supergroup gets a new id: moves the group row and every form, session and submission
+     * to [newId] in one transaction, resealing session state, whose AAD names the chat (a submission's names only
+     * its id). Statements run in foreign-key order: new row, children, old row. False, changing nothing, when
+     * [oldId] is unknown, so a repeated update is a no-op. A [newId] row the bot registered first keeps its title
+     * and active flag and takes the old retention.
+     */
+    fun migrate(oldId: Long, newId: Long, sessions: SessionRepo): Boolean = transaction(db) {
+        val old = GroupChats.selectAll().where { GroupChats.chatId eq oldId }.singleOrNull()?.let(::group) ?: return@transaction false
+        if (GroupChats.selectAll().where { GroupChats.chatId eq newId }.empty()) {
+            GroupChats.insert {
+                it[chatId] = newId; it[title] = old.title; it[active] = old.active
+                it[retentionDays] = old.retentionDays; it[nudgedAt] = old.nudgedAt
+            }
+        } else {
+            GroupChats.update({ GroupChats.chatId eq newId }) { it[retentionDays] = old.retentionDays }
+        }
+        Forms.update({ Forms.chatId eq oldId }) { it[chatId] = newId }
+        sessions.moveChat(oldId, newId)
+        Submissions.update({ Submissions.chatId eq oldId }) { it[chatId] = newId }
+        GroupChats.deleteWhere { GroupChats.chatId eq oldId }
+        true
+    }
+
     fun markNudged(chatId: Long, at: Instant) = transaction(db) {
         GroupChats.update({ GroupChats.chatId eq chatId }) { it[nudgedAt] = at }
         Unit
@@ -140,6 +164,17 @@ class SessionRepo(private val db: Database, private val crypto: Crypto) {
 
     fun forChat(chatId: Long): List<Session> = transaction(db) {
         FormSessions.selectAll().where { FormSessions.chatId eq chatId }.map(::session)
+    }
+
+    /** Re-keys [oldChat]'s sessions to [newChat], resealing each under its new AAD. Runs in the caller's transaction. */
+    internal fun moveChat(oldChat: Long, newChat: Long) {
+        for (r in FormSessions.selectAll().where { FormSessions.chatId eq oldChat }.toList()) {
+            val u = r[FormSessions.userId]
+            val state = crypto.open(r[FormSessions.answers], aad(u, oldChat))
+            FormSessions.update({ (FormSessions.userId eq u) and (FormSessions.chatId eq oldChat) }) {
+                it[chatId] = newChat; it[answers] = crypto.seal(state, aad(u, newChat))
+            }
+        }
     }
 
     fun idleSince(cutoff: Instant): List<Session> = transaction(db) {

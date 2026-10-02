@@ -138,4 +138,37 @@ class ReposTest : StringSpec({
         subs.get(a) shouldNotBe null
         shouldThrow<GeneralSecurityException> { subs.get(b) }
     }
+
+    "migrate re-keys a group and everything under it, reseals sessions, and is idempotent" {
+        val db = testDb("migrate re-keys"); val crypto = testCrypto()
+        val groups = GroupRepo(db); val forms = FormRepo(db)
+        val sessions = SessionRepo(db, crypto); val subs = SubmissionRepo(db, crypto)
+        groups.upsert(1, "Old", true); groups.setRetention(1, 30); groups.markNudged(1, now)
+        forms.save(1, form, 0, 9, now)
+        val st = SessionState(p, mapOf("a4" to "secret"))
+        sessions.put(Session(5, 1, 1, 0, st, "en", now))
+        val sid = subs.create(1, 5, 1, p, mapOf("a4" to "x"), Status.PENDING, now)
+        subs.addReviewMessage(sid, 7, 100)
+
+        groups.migrate(1, 2, sessions) shouldBe true
+        groups.get(1) shouldBe null
+        groups.get(2) shouldBe Group(2, "Old", true, 30, now)
+        forms.current(2) shouldBe (1 to form)
+        sessions.get(5, 1) shouldBe null
+        sessions.get(5, 2)!!.state shouldBe st
+        subs.get(sid)!!.let { it.chatId shouldBe 2L; it.answers shouldBe mapOf("a4" to "x") }
+        subs.reviewMessages(sid) shouldBe listOf(7L to 100L)
+
+        groups.migrate(1, 2, sessions) shouldBe false
+        groups.get(2)!!.retentionDays shouldBe 30
+    }
+
+    "migrate onto a supergroup row the bot already registered keeps that row's state" {
+        val db = testDb("migrate onto existing"); val groups = GroupRepo(db)
+        groups.upsert(1, "Old", true); groups.setRetention(1, 30)
+        groups.upsert(2, "New", false)
+        groups.migrate(1, 2, SessionRepo(db, testCrypto())) shouldBe true
+        groups.get(2) shouldBe Group(2, "New", false, 30, null)
+        groups.get(1) shouldBe null
+    }
 })

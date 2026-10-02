@@ -20,7 +20,7 @@ private class RegEnv(name: String) {
     val users = BotUserRepo(db)
     val review = ReviewService(subs, forms, groups, users, AdminCheck(tg, clock), tg, clock)
     val flow = ApplicantFlow(groups, forms, sessions, subs, users, review, tg, clock)
-    val reg = GroupRegistry(groups, subs, users, review, flow, tg)
+    val reg = GroupRegistry(groups, sessions, subs, users, review, flow, tg)
 
     /** Group -100 with decider 1 who started the bot. */
     fun group(active: Boolean) {

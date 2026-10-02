@@ -48,14 +48,15 @@ private class HandlerEnv(name: String) {
     val subs = SubmissionRepo(db, testCrypto())
     val users = BotUserRepo(db)
     val review = ReviewService(subs, forms, groups, users, AdminCheck(tg, clock), tg, clock)
-    val flow = ApplicantFlow(groups, forms, SessionRepo(db, testCrypto()), subs, users, review, tg, clock)
+    val sessions = SessionRepo(db, testCrypto())
+    val flow = ApplicantFlow(groups, forms, sessions, subs, users, review, tg, clock)
 
     init {
         Registry.tg = tg
         Registry.users = users
         Registry.review = review
         Registry.flow = flow
-        Registry.registry = GroupRegistry(groups, subs, users, review, flow, tg)
+        Registry.registry = GroupRegistry(groups, sessions, subs, users, review, flow, tg)
         groups.upsert(CHAT, "Club", true)
         forms.save(CHAT, Form("Hi", listOf(Text("q1", "Why?"), Text("q2", "Where?"))), 0, 9, clock.instant())
         tg.adminsOf[CHAT] = listOf(Admin(ADMIN, "Boss", false, true))
@@ -159,5 +160,22 @@ class HandlersTest : StringSpec({
         seen.filter { it.startsWith("m") } shouldBe listOf("m1", "m2", "m3")
         seen.first() shouldBe "other"
         last.isEmpty() shouldBe true
+    }
+
+    "a group upgraded to a supergroup moves to the new id" {
+        val e = HandlerEnv("h-migrate")
+        e.flow.onJoinRequest(CHAT, U, U_CHAT, Profile("Ann", "ann"), "en")
+        val migrate = upd(
+            """{"update_id":20,"message":{"message_id":1,"date":1,"chat":{"id":$CHAT,"type":"group","title":"Club"},""" +
+                """"from":${user(ADMIN)},"migrate_to_chat_id":-1009}}""",
+        )
+        chatMigrated(migrate)
+        e.groups.get(CHAT) shouldBe null
+        e.groups.get(-1009)!!.active shouldBe true
+        e.forms.current(-1009)!!.first shouldBe 1
+        e.sessions.get(U, -1009)!!.step shouldBe 0
+        chatMigrated(migrate) // a repeat is a no-op
+        e.groups.get(-1009)!!.title shouldBe "Club"
+        e.tg.calls.filter { it.startsWith("send $CHAT") || it.startsWith("send -1009") }.shouldBeEmpty()
     }
 })

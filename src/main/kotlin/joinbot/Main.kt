@@ -68,7 +68,7 @@ suspend fun main(): Unit = coroutineScope {
     val flow = ApplicantFlow(groups, forms, sessions, subs, users, review, tg, clock)
     Registry.flow = flow
     Registry.review = review
-    Registry.registry = GroupRegistry(groups, subs, users, review, flow, tg)
+    Registry.registry = GroupRegistry(groups, sessions, subs, users, review, flow, tg)
     Registry.users = users
     Registry.tg = tg
 
