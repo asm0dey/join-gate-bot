@@ -68,12 +68,31 @@ class MiniAppApiTest : StringSpec({
             app.client.get("/api/groups").status shouldBe HttpStatusCode.Unauthorized
         }
     }
-    "non-admin → 403, unknown or inactive → 404, bad id → 400" {
+    "non-admin → 403, unknown → 404, bad id → 400" {
         ApiEnv("api-403").also { it.groups.upsert(-300, "Gone", false) }.run {
             get("/api/groups/$G1/form", user = 9).status shouldBe HttpStatusCode.Forbidden
             get("/api/groups/-999/form").status shouldBe HttpStatusCode.NotFound
-            get("/api/groups/-300/form").status shouldBe HttpStatusCode.NotFound
+            get("/api/groups/-300/form").status shouldBe HttpStatusCode.Forbidden // inactive, and nobody decides there
             get("/api/groups/abc/form").status shouldBe HttpStatusCode.BadRequest
+        }
+    }
+    "an inactive group stays listed and usable for its deciders" {
+        val e = ApiEnv("api-inactive")
+        e.groups.upsert(-300, "Gone", false)
+        e.tg.adminsOf[-300] = listOf(Admin(1, "A", false, true))
+        val id = e.subs.create(-300, 5, null, Profile("Ann", null), null, Status.PENDING, e.clock.instant())
+        e.run {
+            val listed = parse(get("/api/groups").bodyAsText()).jsonArray.associate {
+                it.jsonObject["id"]!!.jsonPrimitive.content to it.jsonObject["active"]!!.jsonPrimitive.content
+            }
+            listed shouldBe mapOf("-100" to "true", "-300" to "false")
+            get("/api/groups/-300/form").status shouldBe HttpStatusCode.OK
+            put("/api/groups/-300/form", saveBody(form, 0)).status shouldBe HttpStatusCode.OK
+            get("/api/groups/-300/submissions/$id").status shouldBe HttpStatusCode.OK
+            post("/api/groups/-300/export").status shouldBe HttpStatusCode.Accepted
+            put("/api/groups/-300/settings", """{"retentionDays":30}""").status shouldBe HttpStatusCode.NoContent
+            delete("/api/groups/-300/submissions/$id").status shouldBe HttpStatusCode.NoContent
+            get("/api/groups/-300/form", user = 2).status shouldBe HttpStatusCode.Forbidden
         }
     }
     "groups lists only where viewer decides" {

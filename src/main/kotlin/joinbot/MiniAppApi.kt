@@ -17,7 +17,7 @@ class MiniAppDeps(
     val admins: AdminCheck, val tg: Tg, val users: BotUserRepo, val clock: Clock,
 )
 
-@Serializable data class GroupDto(val id: Long, val title: String, val hasForm: Boolean, val retentionDays: Int)
+@Serializable data class GroupDto(val id: Long, val title: String, val hasForm: Boolean, val retentionDays: Int, val active: Boolean)
 @Serializable data class FormDto(val version: Int, val schema: Form?)
 @Serializable data class SaveFormBody(val schema: Form, val baseVersion: Int)
 @Serializable data class SavedDto(val version: Int)
@@ -42,11 +42,14 @@ private suspend fun RoutingContext.viewer(d: MiniAppDeps): Viewer? {
     return v
 }
 
-/** Viewer, then group: bad id 400, unknown/inactive 404, not a decider 403. [fresh] for writes. */
+/**
+ * Viewer, then group: bad id 400, unknown 404, not a decider 403. [fresh] for writes. An inactive group stays
+ * reachable for its deciders, so its submissions can still be read, exported and deleted.
+ */
 private suspend fun RoutingContext.inGroup(d: MiniAppDeps, fresh: Boolean, block: suspend (Viewer, Group) -> Unit) {
     val v = viewer(d) ?: return
     val id = call.parameters["id"]?.toLongOrNull() ?: return call.respond(HttpStatusCode.BadRequest)
-    val g = d.groups.get(id)?.takeIf { it.active } ?: return call.respond(HttpStatusCode.NotFound)
+    val g = d.groups.get(id) ?: return call.respond(HttpStatusCode.NotFound)
     if (!d.admins.canDecide(id, v.userId, fresh)) return call.respond(HttpStatusCode.Forbidden)
     block(v, g)
 }
@@ -57,8 +60,8 @@ private suspend inline fun <reified T : Any> RoutingContext.body(): T? =
 fun Route.api(d: MiniAppDeps) {
     get("/groups") {
         val v = viewer(d) ?: return@get
-        val out = d.groups.active().filter { d.admins.canDecide(it.chatId, v.userId) }
-            .map { GroupDto(it.chatId, it.title, d.forms.current(it.chatId) != null, it.retentionDays) }
+        val out = d.groups.all().filter { d.admins.canDecide(it.chatId, v.userId) }
+            .map { GroupDto(it.chatId, it.title, d.forms.current(it.chatId) != null, it.retentionDays, it.active) }
         call.respond(out)
     }
     get("/groups/{id}/form") {

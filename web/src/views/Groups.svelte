@@ -22,7 +22,7 @@
 {:else}
   <ul class="flex flex-col gap-2">
     {#each groups as g}
-      <li><button class="btn btn-block justify-start bg-base-100" onclick={() => onopen(g)}>{g.title}</button></li>
+      <li><button class="btn btn-block justify-start bg-base-100" onclick={() => onopen(g)}>{g.title}{#if !g.active}<span class="badge badge-ghost badge-sm">{t.inactive}</span>{/if}</button></li>
     {/each}
   </ul>
 {/if}

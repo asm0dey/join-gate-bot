@@ -31,7 +31,16 @@ class Purge(
                 log.warn("expiry failed: {}", e.javaClass.simpleName)
             }
         }
-        for (g in groups.active()) subs.deleteOlderThan(g.chatId, now - Duration.ofDays(g.retentionDays.toLong()))
+        // inactive groups too: their submissions are still kept, and still age out
+        for (g in groups.all()) {
+            try {
+                subs.deleteOlderThan(g.chatId, now - Duration.ofDays(g.retentionDays.toLong()))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.warn("retention purge failed: {}", e.javaClass.simpleName)
+            }
+        }
     }
 
     // ponytail: a daily loop means expiry lands up to 8 days after the last activity; run it hourly if that matters

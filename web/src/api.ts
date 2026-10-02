@@ -1,7 +1,7 @@
 import { tg } from './tg'
 import type { Form } from './editor'
 
-export type Group = { id: number; title: string; hasForm: boolean; retentionDays: number }
+export type Group = { id: number; title: string; hasForm: boolean; retentionDays: number; active: boolean }
 export type FormDto = { version: number; schema: Form | null }
 export type Status = 'PENDING' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN' | 'EXPIRED'
 export const STATUSES: Status[] = ['PENDING', 'APPROVED', 'REJECTED', 'WITHDRAWN', 'EXPIRED']

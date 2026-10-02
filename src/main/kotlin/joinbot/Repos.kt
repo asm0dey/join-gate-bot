@@ -55,6 +55,8 @@ class GroupRepo(private val db: Database) {
         GroupChats.selectAll().where { GroupChats.chatId eq chatId }.singleOrNull()?.let(::group)
     }
 
+    fun all(): List<Group> = transaction(db) { GroupChats.selectAll().map(::group) }
+
     fun active(): List<Group> = transaction(db) {
         GroupChats.selectAll().where { GroupChats.active eq true }.map(::group)
     }

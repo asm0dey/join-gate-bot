@@ -64,6 +64,14 @@ class PurgeTest : StringSpec({
         e.subs.get(pending).shouldNotBeNull()
     }
 
+    "retention also runs for an inactive group" {
+        val e = PurgeEnv("purge-inactive")
+        e.groups.upsert(-1, "G", false); e.groups.setRetention(-1, 30)
+        val old = e.subs.create(-1, 5, 1, ann, null, Status.APPROVED, e.clock.instant() - Duration.ofDays(31))
+        e.purge.runOnce()
+        e.subs.get(old).shouldBeNull()
+    }
+
     "one failing decline does not stop the rest" {
         val e = PurgeEnv("purge-failing")
         e.groups.upsert(-1, "G", true)
