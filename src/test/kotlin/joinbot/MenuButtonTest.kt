@@ -84,4 +84,17 @@ class MenuButtonTest : StringSpec({
 
         setDefaultMenuButton(client, "000:fake-token-for-tests", "https://x.example/app") shouldBe false
     }
+
+    "deleteWebhook posts to deleteWebhook and reports Telegram's answer" {
+        var path: String? = null
+        var status = HttpStatusCode.OK
+        val client = HttpClient(MockEngine { request ->
+            path = request.url.encodedPath
+            respond("""{"ok":true,"result":true}""", status, headersOf(HttpHeaders.ContentType, "application/json"))
+        })
+        deleteWebhook(client, "000:fake-token-for-tests") shouldBe true
+        path.shouldNotBeNull().endsWith("/deleteWebhook") shouldBe true
+        status = HttpStatusCode.Unauthorized
+        deleteWebhook(client, "000:fake-token-for-tests") shouldBe false
+    }
 })

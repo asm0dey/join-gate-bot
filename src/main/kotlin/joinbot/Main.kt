@@ -115,6 +115,17 @@ suspend fun main(): Unit = coroutineScope {
 
     Purge(sessions, flow, subs, groups, clock).start(this)
 
+    // getUpdates is refused while a webhook is set; best effort, polling's own errors cover the rest
+    val unhooked = try {
+        deleteWebhook(http, cfg.botToken)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        logger.warn("join-gate-bot: deleteWebhook failed: {}", e.javaClass.simpleName)
+        null
+    }
+    if (unhooked == false) logger.warn("join-gate-bot: deleteWebhook was rejected")
+
     logger.info("join-gate-bot: listening")
     poll(http, cfg.botToken, bot)
 }
@@ -137,6 +148,10 @@ internal suspend fun validateBotToken(bot: TelegramBot): TokenValidation = try {
 } catch (e: Exception) {
     TokenValidation.Unknown(e.javaClass.simpleName)
 }
+
+/** One raw Bot API call, like getUpdates; true when Telegram accepted it. [client] is caller-owned; never logs [token]. */
+internal suspend fun deleteWebhook(client: HttpClient, token: String): Boolean =
+    client.post("https://api.telegram.org/bot$token/deleteWebhook").status.isSuccess()
 
 @Serializable
 private data class WebAppUrlBody(val url: String)
