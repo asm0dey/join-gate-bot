@@ -5,6 +5,9 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldEndWith
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 
 private class RegEnv(name: String) {
     val db = testDb(name)
@@ -128,5 +131,31 @@ class GroupRegistryTest : StringSpec({
         e.review.onDecision(1, "c1", "r|$id|a")
         e.subs.get(id)!!.status shouldBe Status.APPROVED
         e.tg.edits.single().messageId shouldBe 101L
+    }
+    "stored-inactive group with a session: closed with GROUP_GONE, no handoff" {
+        val e = RegEnv("registry stale session")
+        e.group(active = false)
+        e.pending(5)
+        e.sessions.put(Session(7, -100, 1, 0, SessionState(Profile("C", null)), null, e.at()))
+        e.reg.onBotStatus(-100, "G", isAdmin = false, canInvite = false)
+        e.sessions.get(7, -100) shouldBe null
+        e.tg.sent.map { it.chatId to it.text } shouldBe listOf(7L to Texts.t(null, T.GROUP_GONE))
+        e.tg.edits shouldBe emptyList()
+    }
+
+    "concurrent demote and restore leave copies matching the final state" {
+        repeat(20) { i ->
+            val e = RegEnv("registry race $i")
+            e.group(active = true)
+            val id = e.pending(5)
+            e.review.submit(id)
+            coroutineScope {
+                launch(Dispatchers.Default) { e.reg.onBotStatus(-100, "G", isAdmin = true, canInvite = false) }
+                launch(Dispatchers.Default) { e.reg.onBotStatus(-100, "G", isAdmin = true, canInvite = true) }
+            }
+            val copy = e.subs.reviewMessages(id).single().second
+            val suspended = e.tg.edits.any { it.messageId == copy }
+            suspended shouldBe !e.groups.get(-100)!!.active
+        }
     }
 })
