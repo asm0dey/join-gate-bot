@@ -1,0 +1,118 @@
+package joinbot
+
+import java.time.Clock
+import java.time.Duration
+
+/** Telegram's message length limit. */
+const val MAX_MESSAGE = 4096
+
+/** Fans a submission out to the group's deciders and settles Approve/Reject clicks; the first click wins (spec C). */
+class ReviewService(
+    private val subs: SubmissionRepo, private val forms: FormRepo, private val groups: GroupRepo, private val users: BotUserRepo,
+    private val admins: AdminCheck, private val tg: Tg, private val clock: Clock,
+) {
+    suspend fun submit(submissionId: Long) {
+        val s = subs.get(submissionId) ?: return
+        val g = groups.get(s.chatId)?.takeIf { it.active } ?: return
+        val form = s.formVersion?.let { forms.version(s.chatId, it) }
+        var reached = 0
+        for (adminId in admins.deciders(s.chatId)) {
+            if (users.dmOk(adminId) && sendCopy(s, form, adminId)) reached++
+        }
+        if (reached > 0) return
+        val now = clock.instant()
+        if (g.nudgedAt != null && now < g.nudgedAt.plus(NUDGE_EVERY)) return
+        tg.send(s.chatId, Texts.t(null, T.NUDGE, subs.list(s.chatId, Status.PENDING).size))
+        groups.markNudged(s.chatId, now)
+    }
+
+    suspend fun onDecision(adminId: Long, callbackId: String, data: String) {
+        val lang = users.lang(adminId)
+        suspend fun alert(key: T, vararg args: Any) = tg.answer(callbackId, Texts.t(lang, key, *args), alert = true)
+
+        val parts = data.split('|')
+        val status = when (parts.getOrNull(2)) { "a" -> Status.APPROVED; "j" -> Status.REJECTED; else -> null }
+        val s = parts.getOrNull(1)?.toLongOrNull()?.let(subs::get)
+        if (parts.size != 3 || parts[0] != "r" || status == null || s == null) return alert(T.STALE_BUTTON)
+        if (groups.get(s.chatId)?.active != true) return alert(T.GROUP_GONE)
+        if (!admins.canDecide(s.chatId, adminId, fresh = true)) return alert(T.NOT_ADMIN_ANYMORE)
+
+        // The conditional UPDATE is the only arbiter between simultaneous clicks.
+        suspend fun alreadyDecided() = alert(T.ALREADY_DECIDED, deciderName(s.chatId, subs.get(s.id)?.decidedBy, lang))
+        if (!subs.decide(s.id, status, adminId, clock.instant())) return alreadyDecided()
+        val result = if (status == Status.APPROVED) tg.approve(s.chatId, s.userId) else tg.decline(s.chatId, s.userId)
+        val final = when (result) {
+            Decision.OK -> status
+            Decision.TRANSIENT -> { subs.revert(s.id); return alert(T.TRY_AGAIN) }
+            Decision.GONE -> {
+                subs.revert(s.id)
+                if (!subs.decide(s.id, Status.WITHDRAWN, adminId, clock.instant())) return alreadyDecided()
+                Status.WITHDRAWN
+            }
+        }
+        tg.answer(callbackId)
+
+        val form = s.formVersion?.let { forms.version(s.chatId, it) }
+        for ((copyAdmin, messageId) in subs.reviewMessages(s.id)) {
+            val l = users.lang(copyAdmin)
+            val outcome = when (final) {
+                Status.APPROVED -> Texts.t(l, T.DECIDED_BY_APPROVED, deciderName(s.chatId, adminId, l))
+                Status.REJECTED -> Texts.t(l, T.DECIDED_BY_REJECTED, deciderName(s.chatId, adminId, l))
+                else -> Texts.t(l, T.WITHDRAWN)
+            }
+            tg.edit(copyAdmin, messageId, fit(renderReview(s, form, l), "\n\n$outcome"))
+        }
+        if (final == Status.WITHDRAWN) return
+        val userLang = users.lang(s.userId)
+        val sent = tg.send(s.userId, Texts.t(userLang, if (final == Status.APPROVED) T.APPROVED_USER else T.REJECTED_USER))
+        if (sent == Sent.Forbidden) users.forbidden(s.userId)
+    }
+
+    /** On /start: every PENDING submission in an active group [adminId] can decide, minus copies they already have. */
+    suspend fun deliverPending(adminId: Long) {
+        // ponytail: one cached admin lookup per active group; track chat_member updates if groups grow into the hundreds
+        val chats = groups.active().map { it.chatId }.filter { admins.canDecide(it, adminId) }
+        for (s in subs.pendingInChats(chats)) {
+            if (subs.reviewMessages(s.id).any { it.first == adminId }) continue
+            // a 403 means the rest would fail too
+            if (!sendCopy(s, s.formVersion?.let { forms.version(s.chatId, it) }, adminId) && !users.dmOk(adminId)) return
+        }
+    }
+
+    fun renderReview(s: Submission, form: Form?, lang: String?): String = buildString {
+        append(Texts.t(lang, T.REVIEW_HEADER, s.profile.name, groups.get(s.chatId)?.title.orEmpty()))
+        s.profile.username?.let { append("\n@").append(it) }
+        append("\n\n")
+        val answers = s.answers ?: run { append(Texts.t(lang, T.REVIEW_UNREACHABLE, s.profile.name)); return@buildString }
+        // form order; ids the form no longer knows (or a missing form) fall back to the raw id
+        val prompts = form?.fields.orEmpty().associate { it.id to it.prompt }
+        val ids = prompts.keys.filter { it in answers } + answers.keys.filter { it !in prompts }
+        append(ids.joinToString("\n") { "${prompts[it] ?: it}: ${answers[it]}" })
+    }
+
+    /** False when the admin could not be reached. */
+    private suspend fun sendCopy(s: Submission, form: Form?, adminId: Long): Boolean {
+        val lang = users.lang(adminId)
+        val buttons = listOf(listOf(Button(Texts.t(lang, T.APPROVE), "r|${s.id}|a"), Button(Texts.t(lang, T.REJECT), "r|${s.id}|j")))
+        return when (val r = tg.send(adminId, fit(renderReview(s, form, lang)), buttons)) {
+            is Sent.Ok -> { subs.addReviewMessage(s.id, adminId, r.messageId); true }
+            Sent.Forbidden -> { users.forbidden(adminId); false }
+            Sent.Failed -> false
+        }
+    }
+
+    private suspend fun deciderName(chatId: Long, userId: Long?, lang: String?): String =
+        userId?.let { admins.name(chatId, it) } ?: Texts.t(lang, T.AN_ADMIN)
+
+    private companion object {
+        val NUDGE_EVERY: Duration = Duration.ofHours(1)
+
+        /** [body] cut at a line boundary, ending in "…", so that body + [suffix] fits one message. Full answers stay in the Mini App. */
+        fun fit(body: String, suffix: String = ""): String {
+            val room = MAX_MESSAGE - suffix.length
+            if (body.length <= room) return body + suffix
+            val head = body.take(room - 1)
+            return head.take(head.lastIndexOf('\n') + 1) + "…" + suffix
+        }
+    }
+}

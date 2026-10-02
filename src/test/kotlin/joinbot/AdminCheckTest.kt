@@ -2,16 +2,7 @@ package joinbot
 
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
-import java.time.Clock
 import java.time.Duration
-import java.time.Instant
-import java.time.ZoneOffset
-
-private class TestClock(var now: Instant = Instant.parse("2026-01-01T00:00:00Z")) : Clock() {
-    override fun instant() = now
-    override fun getZone() = ZoneOffset.UTC
-    override fun withZone(zone: java.time.ZoneId?) = this
-}
 
 private class CountingTg(private val d: FakeTg) : Tg by d {
     var adminsCalls = 0

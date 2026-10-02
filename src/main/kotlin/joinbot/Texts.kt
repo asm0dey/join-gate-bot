@@ -6,6 +6,7 @@ import java.util.Locale
 //   NUDGE(count: Int)
 //   DECIDED_BY_APPROVED(name), DECIDED_BY_REJECTED(name), ALREADY_DECIDED(name)
 //   REVIEW_HEADER(applicantName, groupTitle), REVIEW_UNREACHABLE(applicantName)
+// AN_ADMIN is the decider name when they are no longer an admin.
 // Always formatted, so a forgotten arg throws. Avoid a literal percent sign in any text.
 
 enum class T {
@@ -13,7 +14,7 @@ enum class T {
     INVALID_NOT_A_NUMBER, INVALID_TOO_SMALL, INVALID_TOO_LARGE, INVALID_NOT_A_LINK, INVALID_TOO_FEW, INVALID_TOO_MANY, INVALID_WRONG_KIND,
     TYPE_OTHER, SUBMITTED, DECLINED_CONSENT, EXPIRED, GROUP_GONE, STALE_BUTTON, HOW_TO_JOIN, APPROVED_USER, REJECTED_USER,
     REVIEW_HEADER, REVIEW_UNREACHABLE, APPROVE, REJECT, DECIDED_BY_APPROVED, DECIDED_BY_REJECTED, ALREADY_DECIDED, NOT_ADMIN_ANYMORE,
-    TRY_AGAIN, WITHDRAWN, NUDGE, NEEDS_INVITE_RIGHT, EXPORT_READY,
+    TRY_AGAIN, WITHDRAWN, AN_ADMIN, NUDGE, NEEDS_INVITE_RIGHT, EXPORT_READY,
 }
 
 private val en = mapOf(
@@ -54,6 +55,7 @@ private val en = mapOf(
     T.NOT_ADMIN_ANYMORE to "You can no longer decide for this group.",
     T.TRY_AGAIN to "Something went wrong. Please try again.",
     T.WITHDRAWN to "The applicant withdrew or already joined.",
+    T.AN_ADMIN to "an admin",
     T.NUDGE to "%d join requests are waiting. Admins, please open a chat with this bot and press Start.",
     T.NEEDS_INVITE_RIGHT to "I need the Invite users right to handle join requests.",
     T.EXPORT_READY to "Your export is ready.",
@@ -97,6 +99,7 @@ private val ru = mapOf(
     T.NOT_ADMIN_ANYMORE to "Вы больше не можете решать по этой группе.",
     T.TRY_AGAIN to "Что-то пошло не так. Попробуйте ещё раз.",
     T.WITHDRAWN to "Заявитель отозвал заявку или уже вступил.",
+    T.AN_ADMIN to "администратор",
     T.NUDGE to "Заявок на вступление в ожидании: %d. Администраторы, откройте чат с этим ботом и нажмите Start.",
     T.NEEDS_INVITE_RIGHT to "Мне нужно право «Приглашать пользователей», чтобы обрабатывать заявки.",
     T.EXPORT_READY to "Экспорт готов.",

@@ -7,18 +7,23 @@ import java.util.concurrent.ConcurrentHashMap
 
 /** Who may review join requests: non-bot admins with the invite right. Admin lists are cached for [ttl]. */
 class AdminCheck(private val tg: Tg, private val clock: Clock, private val ttl: Duration = Duration.ofSeconds(60)) {
-    private val cache = ConcurrentHashMap<Long, Pair<Instant, List<Long>>>()
+    private val cache = ConcurrentHashMap<Long, Pair<Instant, List<Admin>>>()
 
-    suspend fun canDecide(chatId: Long, userId: Long, fresh: Boolean = false): Boolean = userId in load(chatId, fresh)
+    suspend fun canDecide(chatId: Long, userId: Long, fresh: Boolean = false): Boolean = userId in load(chatId, fresh).deciders()
 
-    suspend fun deciders(chatId: Long): List<Long> = load(chatId, false)
+    suspend fun deciders(chatId: Long): List<Long> = load(chatId, false).deciders()
+
+    /** First name of any admin of the chat, null if not (or no longer) one. */
+    suspend fun name(chatId: Long, userId: Long): String? = load(chatId, false).find { it.userId == userId }?.name
+
+    private fun List<Admin>.deciders() = filter { !it.isBot && it.canInvite }.map { it.userId }
 
     // A failed lookup is not cached: nobody can decide now, the next call retries.
-    private suspend fun load(chatId: Long, fresh: Boolean): List<Long> {
+    private suspend fun load(chatId: Long, fresh: Boolean): List<Admin> {
         val now = clock.instant()
         if (!fresh) cache[chatId]?.takeIf { now < it.first.plus(ttl) }?.let { return it.second }
-        val ids = tg.admins(chatId)?.filter { !it.isBot && it.canInvite }?.map { it.userId } ?: return emptyList()
-        cache[chatId] = now to ids
-        return ids
+        val admins = tg.admins(chatId) ?: return emptyList()
+        cache[chatId] = now to admins
+        return admins
     }
 }
