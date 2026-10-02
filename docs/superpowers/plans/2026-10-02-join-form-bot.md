@@ -588,6 +588,55 @@ Built before ApplicantFlow because submitting hands off to it.
 
 ---
 
+### Task 9a: Privilege-loss handoff
+
+Added on the user's request: when the bot loses the right to approve (removed, or demoted / invite right taken away), nobody is left waiting without knowing where their request went; when the right comes back, review resumes.
+
+**Files:**
+- Modify: `src/main/kotlin/joinbot/GroupRegistry.kt`, `ReviewService.kt`, `Texts.kt`
+- Test: `src/test/kotlin/joinbot/GroupRegistryTest.kt`, `ReviewServiceTest.kt`
+
+**Interfaces:**
+- Consumes: `GroupRegistry.onBotStatus` (Task 6), `ReviewService` (Task 7), `SubmissionRepo.list(chatId, PENDING)`, `reviewMessages`.
+- Produces:
+  ```kotlin
+  class GroupRegistry(groups: GroupRepo, sessions: SessionRepo, subs: SubmissionRepo, users: BotUserRepo, review: ReviewService, tg: Tg)  // gains subs + review
+  // ReviewService:
+  suspend fun suspendChat(chatId: Long)   // edit every review copy of every PENDING submission in chatId: text = original + "\n\n" + REVIEW_SUSPENDED, no buttons
+  suspend fun resumeChat(chatId: Long)    // re-run fan-out (same as submit) for every PENDING submission in chatId; addReviewMessage overwrites the (submission, admin) row
+  // Texts: GROUP_GONE reworded (below); new keys
+  T.MANUAL_REVIEW            // to applicants: "The group's admins will review your join request directly in Telegram."
+  T.REVIEW_SUSPENDED         // appended to review copies: "I can no longer approve requests here — use the group's Join requests list."
+  T.GROUP_HANDOFF            // to the group, arg %d = PENDING count: "I can't approve join requests any more. %d request(s) wait in this group's Join requests list."
+  ```
+- `GROUP_GONE` (mid-form applicants) reworded to say the form is closed and admins will review the request directly in Telegram.
+
+Behaviour in `onBotStatus`, on a transition **from active to inactive** (stored `active == true`, new state inactive):
+1. Mid-form sessions: as today (delete + `GROUP_GONE`).
+2. Every `PENDING` submission's applicant gets `MANUAL_REVIEW` once (in `users.lang`); per-user failures caught as in Task 6.
+3. `review.suspendChat(chatId)`.
+4. `tg.send(chatId, GROUP_HANDOFF(count))` when count > 0. A removed bot's send fails silently (`Sent.Failed`), which is fine.
+
+On a transition **from inactive to active** (stored `active == false`, new state active, group existed): `review.resumeChat(chatId)`. Submissions stay `PENDING` throughout; nothing is auto-approved or declined.
+
+- [ ] **Step 1: Write the failing tests**
+
+```kotlin
+"losing the right hands pending requests to manual review" { /* active group, 2 PENDING (users 5, 6) each with a review copy, 1 session (user 7)
+   → onBotStatus(…, isAdmin=true, canInvite=false):
+   users 5 and 6 got MANUAL_REVIEW; user 7 got GROUP_GONE; both review copies edited with REVIEW_SUSPENDED and no buttons;
+   group got GROUP_HANDOFF with "2"; NEEDS_INVITE_RIGHT also sent; statuses still PENDING */ }
+"no pending → no handoff line" { /* active group, nothing pending → removed → no GROUP_HANDOFF */ }
+"already inactive → nothing re-sent" { /* inactive group with PENDING → onBotStatus(false,false) → no MANUAL_REVIEW, no edits */ }
+"right restored → copies re-sent with buttons" { /* inactive group, 1 PENDING, decider 1 dmOk → onBotStatus(true,true) → one new send to admin 1 with r|id|a, r|id|j; reviewMessages(id) holds the new message id */ }
+"decide after restore uses the new copy" { /* … restore, then onDecision approve → the new message id is edited */ }
+```
+
+- [ ] **Step 2: Run to fail** → **Step 3: Implement** → **Step 4: Run to pass**: `./mvnw -q test -Dtest='GroupRegistryTest,ReviewServiceTest'`, then `mise run build`
+- [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: hand pending requests to manual review when the bot loses the invite right"`
+
+---
+
 ### Task 10: Mini App API and static files
 
 **Files:**
