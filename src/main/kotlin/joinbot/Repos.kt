@@ -11,6 +11,7 @@ import org.jetbrains.exposed.v1.core.greaterEq
 import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.less
 import org.jetbrains.exposed.v1.core.max
+import org.jetbrains.exposed.v1.core.neq
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
@@ -207,8 +208,11 @@ class SubmissionRepo(private val db: Database, private val crypto: Crypto) {
     /** Review messages go with it (FK cascade). */
     fun delete(id: Long) = transaction(db) { Submissions.deleteWhere { Submissions.id eq id }; Unit }
 
+    /** Decided (or expired) submissions created before [cutoff]; a PENDING one still waits for a reviewer. */
     fun deleteOlderThan(chatId: Long, cutoff: Instant): Int = transaction(db) {
-        Submissions.deleteWhere { (Submissions.chatId eq chatId) and (Submissions.createdAt less cutoff) }
+        Submissions.deleteWhere {
+            (Submissions.chatId eq chatId) and (Submissions.createdAt less cutoff) and (Submissions.status neq Status.PENDING.name)
+        }
     }
 
     fun addReviewMessage(id: Long, adminId: Long, messageId: Long) = transaction(db) {

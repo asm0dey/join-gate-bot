@@ -82,14 +82,15 @@ class ReposTest : StringSpec({
         subs.get(subs.create(1, 5, null, p, null, Status.PENDING, now))!!.answers shouldBe null
     }
 
-    "deleteOlderThan only touches that chat and cascades review messages" {
+    "deleteOlderThan spares that chat's PENDING rows and other chats, and cascades review messages" {
         val db = testDb("deleteOlderThan only touches that chat"); group(db, 1, 2)
         val subs = SubmissionRepo(db, testCrypto())
         val old = now.minus(10, ChronoUnit.DAYS)
         val cutoff = now.minus(5, ChronoUnit.DAYS)
-        val oldC1 = subs.create(1, 5, 1, p, null, Status.PENDING, old)
-        val newC1 = subs.create(1, 6, 1, p, null, Status.PENDING, now)
-        val oldC2 = subs.create(2, 5, 1, p, null, Status.PENDING, old)
+        val oldC1 = subs.create(1, 5, 1, p, null, Status.REJECTED, old)
+        val newC1 = subs.create(1, 6, 1, p, null, Status.REJECTED, now)
+        val oldC2 = subs.create(2, 5, 1, p, null, Status.REJECTED, old)
+        val oldPending = subs.create(1, 8, 1, p, null, Status.PENDING, old)
         subs.addReviewMessage(oldC1, 7, 100)
         subs.addReviewMessage(newC1, 7, 101)
         subs.reviewMessages(oldC1) shouldBe listOf(7L to 100L)
@@ -97,6 +98,7 @@ class ReposTest : StringSpec({
         subs.get(oldC1) shouldBe null
         subs.get(newC1) shouldNotBe null
         subs.get(oldC2) shouldNotBe null
+        subs.get(oldPending) shouldNotBe null
         subs.reviewMessages(oldC1) shouldBe emptyList()
         subs.reviewMessages(newC1) shouldBe listOf(7L to 101L)
     }

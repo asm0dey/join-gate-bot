@@ -48,17 +48,20 @@ class PurgeTest : StringSpec({
         e.subs.list(-1, Status.EXPIRED).size shouldBe 1
     }
 
-    "retention deletes only old submissions of that group" {
+    "retention deletes only old decided submissions of that group" {
         val e = PurgeEnv("purge-retention")
         e.groups.upsert(-1, "A", true); e.groups.setRetention(-1, 30)
         e.groups.upsert(-2, "B", true); e.groups.setRetention(-2, 90)
-        fun add(chat: Long, days: Long) =
-            e.subs.create(chat, 5, 1, ann, mapOf("a" to "b"), Status.PENDING, e.clock.instant() - Duration.ofDays(days))
+        fun add(chat: Long, days: Long, status: Status = Status.APPROVED) =
+            e.subs.create(chat, 5, 1, ann, mapOf("a" to "b"), status, e.clock.instant() - Duration.ofDays(days))
         val old1 = add(-1, 31); val fresh1 = add(-1, 29); val kept2 = add(-2, 31)
+        val expired = add(-1, 31, Status.EXPIRED); val pending = add(-1, 31, Status.PENDING)
         e.purge.runOnce()
         e.subs.get(old1).shouldBeNull()
+        e.subs.get(expired).shouldBeNull()
         e.subs.get(fresh1).shouldNotBeNull()
         e.subs.get(kept2).shouldNotBeNull()
+        e.subs.get(pending).shouldNotBeNull()
     }
 
     "one failing decline does not stop the rest" {
