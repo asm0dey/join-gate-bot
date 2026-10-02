@@ -198,11 +198,11 @@ class ReviewServiceTest : StringSpec({
         e.group(-100, admin(1)); e.group(-200, admin(1), admin(2)); e.group(-300, admin(2))
         val a = e.pending(-100); val b = e.pending(-200); e.pending(-300)
         e.users.started(1, "en")
-        e.review.deliverPending(1)
+        e.review.deliverPending(1) shouldBe 2
         e.tg.sent.map { it.chatId } shouldBe listOf(1L, 1L)
         e.subs.reviewMessages(a).map { it.first } shouldBe listOf(1L)
         e.subs.reviewMessages(b).map { it.first } shouldBe listOf(1L)
-        e.review.deliverPending(1)
+        e.review.deliverPending(1) shouldBe 0
         e.tg.sent.size shouldBe 2
     }
 

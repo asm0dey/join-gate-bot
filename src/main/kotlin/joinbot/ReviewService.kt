@@ -68,15 +68,17 @@ class ReviewService(
         if (sent == Sent.Forbidden) users.forbidden(s.userId)
     }
 
-    /** On /start: every PENDING submission in an active group [adminId] can decide, minus copies they already have. */
-    suspend fun deliverPending(adminId: Long) {
+    /** On /start: every PENDING submission in an active group [adminId] can decide, minus copies they already have. Returns how many were sent. */
+    suspend fun deliverPending(adminId: Long): Int {
         // ponytail: one cached admin lookup per active group; track chat_member updates if groups grow into the hundreds
         val chats = groups.active().map { it.chatId }.filter { admins.canDecide(it, adminId) }
+        var sent = 0
         for (s in subs.pendingInChats(chats)) {
             if (subs.reviewMessages(s.id).any { it.first == adminId }) continue
-            // a 403 means the rest would fail too
-            if (!sendCopy(s, s.formVersion?.let { forms.version(s.chatId, it) }, adminId) && !users.dmOk(adminId)) return
+            if (sendCopy(s, s.formVersion?.let { forms.version(s.chatId, it) }, adminId)) sent++
+            else if (!users.dmOk(adminId)) break // a 403 means the rest would fail too
         }
+        return sent
     }
 
     /** The bot lost the invite right: every review copy of a PENDING submission in [chatId] loses its buttons. */
