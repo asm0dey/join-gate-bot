@@ -70,9 +70,9 @@ class ApplicantFlow(
     private suspend fun callback(userId: Long, callbackId: String, data: String, lang: String?, messageId: Long) {
         suspend fun stale() = bot.answerCallback(callbackId, Texts.t(lang, T.STALE_BUTTON), alert = true)
         val p = data.split('|')
-        val chatId = p.getOrNull(1)?.toLongOrNull();
+        val chatId = p.getOrNull(1)?.toLongOrNull()
         val step = p.getOrNull(2)?.toIntOrNull()
-        val action = p.getOrNull(3)?.singleOrNull();
+        val action = p.getOrNull(3)?.singleOrNull()
         val idx = p.getOrNull(4)?.toIntOrNull()
         if (p.size != 5 || p[0] != "f" || chatId == null || step == null || action == null || idx == null) return stale()
         val s = sessions.get(userId, chatId)?.takeIf { it.step == step && it.step != WAITING }?.withLang(lang)

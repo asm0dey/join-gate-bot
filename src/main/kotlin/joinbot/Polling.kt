@@ -106,6 +106,7 @@ private val BACKOFF = 5.seconds
  * else. Never logs the URL or a message: the URL carries the token. [client] needs a request timeout above 30 s.
  */
 internal suspend fun poll(client: HttpClient, token: String, bot: TelegramBot): Unit = supervisorScope {
+    val dispatch = this // jobs outlive the batch; one failed job cannot cancel polling
     val allowed = TG_JSON.encodeToString(ListSerializer(UpdateType.serializer()), ALLOWED_UPDATES)
     var offset = 0L
     val last = ConcurrentHashMap<Long, Job>()
@@ -136,7 +137,7 @@ internal suspend fun poll(client: HttpClient, token: String, bot: TelegramBot): 
             continue
         }
         processBatch(result) { update ->
-            launchInOrder(last, orderKey(update)) {
+            dispatch.launchInOrder(last, orderKey(update)) {
                 try {
                     bot.update.handle(update)
                 } catch (e: CancellationException) {
