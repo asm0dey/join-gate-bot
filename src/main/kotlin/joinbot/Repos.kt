@@ -283,6 +283,14 @@ class BotUserRepo(private val db: Database) {
         Unit
     }
 
+    /** Remembers [lang] for [userId] without touching dm_ok; a new row starts with dm_ok false. */
+    fun setLang(userId: Long, lang: String) = transaction(db) {
+        BotUsers.upsert(onUpdateExclude = listOf(BotUsers.dmOk)) {
+            it[BotUsers.userId] = userId; it[dmOk] = false; it[BotUsers.lang] = lang
+        }
+        Unit
+    }
+
     fun forbidden(userId: Long) = transaction(db) {
         BotUsers.upsert(onUpdateExclude = listOf(BotUsers.lang)) {
             it[BotUsers.userId] = userId; it[dmOk] = false; it[lang] = null

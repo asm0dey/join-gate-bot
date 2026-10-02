@@ -28,6 +28,8 @@ class ApplicantFlow(
     private suspend inline fun <R> locked(userId: Long, block: () -> R): R = locks.computeIfAbsent(userId) { Mutex() }.withLock { block() }
 
     suspend fun onJoinRequest(chatId: Long, userId: Long, userChatId: Long, profile: Profile, lang: String?) = locked(userId) {
+        // decision, manual-review and group-gone DMs reach the applicant outside any session
+        if (lang != null) users.setLang(userId, lang)
         if (groups.get(chatId)?.active != true) return
         val (version, _) = forms.current(chatId) ?: return
         if (subs.pendingFor(chatId, userId) != null) return
@@ -140,7 +142,7 @@ class ApplicantFlow(
             val s = sessions.get(userId, chatId) ?: return@locked
             sessions.delete(userId, chatId)
             try {
-                tg.send(userId, Texts.t(s.lang, T.GROUP_GONE))
+                tg.send(userId, Texts.t(s.lang ?: users.lang(userId), T.GROUP_GONE))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

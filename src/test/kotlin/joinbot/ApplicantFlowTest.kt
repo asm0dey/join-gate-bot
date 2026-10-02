@@ -286,6 +286,28 @@ class ApplicantFlowTest : StringSpec({
         e.session(CHAT2).shouldBeNull()
     }
 
+    "a join request stores the applicant's language, leaving dm_ok alone" {
+        val e = FlowEnv("af-lang")
+        e.flow.onJoinRequest(CHAT, U, U_CHAT, ann, "ru")
+        e.users.lang(U) shouldBe "ru"
+        e.users.dmOk(U) shouldBe false
+        e.users.started(U, "en")
+        e.flow.onJoinRequest(CHAT, U, U_CHAT, ann, "ru")
+        e.users.lang(U) shouldBe "ru"
+        e.users.dmOk(U) shouldBe true
+        e.flow.onJoinRequest(CHAT, U, U_CHAT, ann, null)
+        e.users.lang(U) shouldBe "ru"
+    }
+
+    "the decision DM uses the language of the join request" {
+        val e = FlowEnv("af-lang-decision")
+        e.flow.onJoinRequest(CHAT, U, U_CHAT, ann, "ru")
+        e.fillTo(7); e.press('S')
+        val id = e.subs.list(CHAT, Status.PENDING).single().id
+        e.review.onDecision(ADMIN, "c1", "r|$id|a")
+        e.tg.sent.last().let { it.chatId shouldBe U; it.text shouldBe Texts.t("ru", T.APPROVED_USER) }
+    }
+
     "/start resumes" {
         val e = FlowEnv("af-start")
         e.join(); e.fillTo(1)
