@@ -13,7 +13,10 @@ import io.ktor.http.isSuccess
 import java.time.Clock
 import kotlin.system.exitProcess
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -126,7 +129,11 @@ suspend fun main(): Unit = coroutineScope {
     if (unhooked == false) logger.warn("join-gate-bot: deleteWebhook was rejected")
 
     logger.info("join-gate-bot: listening")
-    poll(http, cfg.botToken, bot)
+    val polling = launch { poll(http, cfg.botToken) { bot.update.handle(it) } }
+    // docker stop sends SIGTERM: let the batch in flight finish before the JVM goes
+    Runtime.getRuntime().addShutdownHook(Thread { runBlocking { polling.cancelAndJoin() } })
+    polling.join()
+    if (!polling.isCancelled) exitProcess(1) // poll returns only when Telegram rejected the token
 }
 
 /** Three-way on purpose: "could not tell" must never be read as "rejected". */

@@ -8,6 +8,8 @@ services:
     volumes:
       - data:/app/data
     restart: unless-stopped
+    # the bot finishes the updates it is handling on SIGTERM, for up to 25 s
+    stop_grace_period: 30s
 
 volumes:
   data:

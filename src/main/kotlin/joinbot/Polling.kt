@@ -1,6 +1,5 @@
 package joinbot
 
-import eu.vendeli.tgbot.TelegramBot
 import eu.vendeli.tgbot.annotations.internal.KtGramInternal
 import eu.vendeli.tgbot.types.common.Update
 import eu.vendeli.tgbot.types.component.ChatReference
@@ -16,15 +15,19 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.system.exitProcess
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -101,51 +104,87 @@ internal fun CoroutineScope.launchInOrder(last: ConcurrentHashMap<Long, Job>, ke
 
 private val BACKOFF = 5.seconds
 
+/** How long a stopping [poll] waits for its last batch; under compose.yaml's stop_grace_period. */
+private val DRAIN = 25.seconds
+
 /**
- * Long polling with vendeli kept for dispatch only. Exits on 401/403 (token revoked); backs off on anything
+ * Long polling with vendeli kept for dispatch only. Returns on 401/403 (token revoked); backs off on anything
  * else. Never logs the URL or a message: the URL carries the token. [client] needs a request timeout above 30 s.
+ *
+ * A batch is confirmed to Telegram (by the next getUpdates' offset) only once all its updates are handled, so
+ * at most one batch is in flight and a crash gets that batch redelivered. Cancelling this lets the batch in
+ * flight finish, for up to [DRAIN], then confirms it.
  */
-internal suspend fun poll(client: HttpClient, token: String, bot: TelegramBot): Unit = supervisorScope {
-    val dispatch = this // jobs outlive the batch; one failed job cannot cancel polling
+internal suspend fun poll(client: HttpClient, token: String, handle: suspend (ProcessedUpdate) -> Unit): Unit = coroutineScope {
+    // not a child: cancelling polling must not cancel a half-handled update
+    val dispatch = CoroutineScope(coroutineContext + SupervisorJob())
     val allowed = TG_JSON.encodeToString(ListSerializer(UpdateType.serializer()), ALLOWED_UPDATES)
     var offset = 0L
+    var inFlight: Pair<List<Job>, Long?> = emptyList<Job>() to null
     val last = ConcurrentHashMap<Long, Job>()
-    while (true) {
-        val response: HttpResponse
-        val result: JsonArray
-        try {
-            response = client.get("https://api.telegram.org/bot$token/getUpdates") {
-                parameter("offset", offset)
-                parameter("timeout", 30)
-                parameter("allowed_updates", allowed)
-            }
-            if (response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden) {
-                log.error("getUpdates rejected the token ({}); exiting", response.status.value)
-                exitProcess(1)
-            }
-            if (!response.status.isSuccess()) {
-                log.warn("getUpdates failed: HTTP {}", response.status.value)
+    try {
+        while (true) {
+            val response: HttpResponse
+            val result: JsonArray
+            try {
+                response = client.get("https://api.telegram.org/bot$token/getUpdates") {
+                    parameter("offset", offset)
+                    parameter("timeout", 30)
+                    parameter("allowed_updates", allowed)
+                }
+                if (response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden) {
+                    log.error("getUpdates rejected the token ({})", response.status.value)
+                    return@coroutineScope
+                }
+                if (!response.status.isSuccess()) {
+                    log.warn("getUpdates failed: HTTP {}", response.status.value)
+                    delay(BACKOFF)
+                    continue
+                }
+                result = TG_JSON.parseToJsonElement(response.bodyAsText()).jsonObject.getValue("result").jsonArray
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.warn("getUpdates failed: {}", e.javaClass.simpleName)
                 delay(BACKOFF)
                 continue
             }
-            result = TG_JSON.parseToJsonElement(response.bodyAsText()).jsonObject.getValue("result").jsonArray
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.warn("getUpdates failed: {}", e.javaClass.simpleName)
-            delay(BACKOFF)
-            continue
-        }
-        processBatch(result) { update ->
-            dispatch.launchInOrder(last, orderKey(update)) {
-                try {
-                    bot.update.handle(update)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    log.warn("dispatch failed: {}", e.javaClass.simpleName)
+            val jobs = mutableListOf<Job>()
+            val next = processBatch(result) { update ->
+                jobs += dispatch.launchInOrder(last, orderKey(update)) {
+                    try {
+                        handle(update)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        log.warn("dispatch failed: {}", e.javaClass.simpleName)
+                    }
                 }
             }
-        }?.let { offset = it }
+            inFlight = jobs to next
+            jobs.joinAll()
+            inFlight = emptyList<Job>() to null
+            next?.let { offset = it }
+        }
+    } finally {
+        // also confirms a finished batch whose next getUpdates never reached Telegram
+        val (jobs, next) = inFlight
+        withContext(NonCancellable) {
+            if (withTimeoutOrNull(DRAIN) { jobs.joinAll() } == null) log.warn("stopped with updates still in flight")
+            else (next ?: offset).takeIf { it > 0 }?.let { withTimeoutOrNull(5.seconds) { confirm(client, token, it) } }
+        }
+    }
+}
+
+/** Marks every update below [offset] handled, so the next start doesn't get them again. Best effort. */
+private suspend fun confirm(client: HttpClient, token: String, offset: Long) {
+    try {
+        client.get("https://api.telegram.org/bot$token/getUpdates") {
+            parameter("offset", offset)
+            parameter("timeout", 0)
+            parameter("limit", 1)
+        }
+    } catch (e: Exception) {
+        log.warn("confirming the last batch failed: {}", e.javaClass.simpleName)
     }
 }
