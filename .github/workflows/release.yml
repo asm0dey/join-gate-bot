@@ -1,13 +1,13 @@
 name: release
 
-# Releases are integers. Tag v1, v2, ... — the tag becomes the image tag.
+# Releases are integers. Tag v1, v2, ... — the tag becomes the image tag and the GitHub Release.
 # The image is the only artifact: the jar alone carries no UI.
 on:
   push:
     tags: ['v*']
 
 permissions:
-  contents: read
+  contents: write   # create the GitHub Release
   packages: write   # push the image to GHCR
 
 jobs:
@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # the release notes list commits since the previous tag
 
       - id: version
         run: echo "number=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
@@ -73,3 +75,21 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:${{ steps.version.outputs.number }}
             ghcr.io/${{ github.repository }}:latest
+
+      # After the image, so a Release never points at an image that failed to push. This repo commits to main
+      # without PRs, so the notes list commit subjects since the previous tag, not --generate-notes' merged PRs.
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          N: ${{ steps.version.outputs.number }}
+          REPO: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          prev=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
+          {
+            git log --no-merges --format='* %s' "${prev:+$prev..}$GITHUB_REF_NAME"
+            echo
+            echo "**Image:** \`ghcr.io/$REPO:$N\`"
+            if [ -n "$prev" ]; then echo; echo "**Full Changelog:** $SERVER/$REPO/compare/$prev...$GITHUB_REF_NAME"; fi
+          } > notes.md
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file notes.md
