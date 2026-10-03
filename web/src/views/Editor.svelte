@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte'
   import { api, ApiError, type Group } from '../api'
-  import { addField, errorsByField, moveField, multiRange, normalize, setMultiMin, removeField, updateField, validate, type Field, type Form } from '../editor'
+  import { addField, errorsByField, firstAnswerTyped, moveField, multiRange, normalize, setMultiMin, removeField, updateField, validate, type Field, type Form } from '../editor'
   import { t } from '../i18n'
   import { haptic } from '../tg'
   import { unsaved } from '../unsaved.svelte'
@@ -168,6 +168,7 @@
     {#if f.type === 'multi'}{@const r = multiRange(f)}<p class="foot">{r.min === 0 ? t.multiOptional : t.pickRange(r.min, r.max, f.options.length)}</p>{/if}
     {#if f.type === 'int'}<p class="foot">{t.noLimit}</p>{/if}
     {#if f.type === 'consent'}<p class="foot">{t.consentAlways}</p>{/if}
+    {#if i === 0 && !firstAnswerTyped(form)}<p class="foot text-error">{t.firstTyped}</p>{/if}
     {@render fieldErrors(f, f.id)}
   {/each}
 

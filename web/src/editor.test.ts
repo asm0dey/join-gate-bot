@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { addField, errorsByField, moveField, multiRange, setMultiMin, removeField, updateField, validate, type Form, type Text, type Multi } from './editor'
+import { addField, firstAnswerTyped, errorsByField, moveField, multiRange, setMultiMin, removeField, updateField, validate, type Form, type Text, type Multi } from './editor'
 
 const empty: Form = { welcome: '', fields: [] }
 
@@ -91,4 +91,11 @@ test('setMultiMin: At least 0 makes the field optional, anything above makes it 
   const m: Multi = { id: 'm', type: 'multi', prompt: 'p', options: ['a', 'b'], required: true }
   expect(setMultiMin(m, 0)).toEqual({ min: 0, required: false })
   expect(setMultiMin(m, 2)).toEqual({ min: 2, required: true })
+})
+
+test('question 1 must be a required typed answer', () => {
+  expect(firstAnswerTyped(empty)).toBe(true)
+  expect(firstAnswerTyped(addField(empty, 'text'))).toBe(true)
+  expect(firstAnswerTyped(addField(empty, 'yesno'))).toBe(false)
+  expect(firstAnswerTyped(updateField(addField(empty, 'link'), 0, { required: false }))).toBe(false)
 })

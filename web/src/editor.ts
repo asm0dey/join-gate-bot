@@ -11,6 +11,15 @@ export type Consent = Base & { type: 'consent' } // the server's Consent has no 
 export type Field = Radio | Multi | Text | IntField | Link | Consent
 export interface Form { welcome: string; fields: Field[] }
 
+/**
+ * Telegram lets the bot keep writing to an applicant only once they have typed something to it: an applicant whose
+ * first answer is a button tap gets no question 2. So question 1 should be typed and unskippable.
+ */
+export const firstAnswerTyped = (f: Form) => {
+  const q = f.fields[0]
+  return !q || ((q.type === 'text' || q.type === 'int' || q.type === 'link') && q.required)
+}
+
 const nz = <T>(v: T | null | undefined) => v ?? undefined
 
 /** Server responses omit defaulted keys (and null min/max); fill them in. */
