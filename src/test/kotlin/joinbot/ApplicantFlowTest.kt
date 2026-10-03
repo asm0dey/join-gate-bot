@@ -7,6 +7,8 @@ import io.kotest.matchers.ints.shouldBeLessThan
 import io.kotest.matchers.ints.shouldBeLessThanOrEqual
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldEndWith
+import io.kotest.matchers.string.shouldStartWith
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -147,7 +149,7 @@ class ApplicantFlowTest : StringSpec({
         val e = FlowEnv("af-few")
         e.join(); e.fillTo(2)
         e.press('d')
-        e.tg.calls.last() shouldBe "answer cb ${en(T.INVALID_TOO_FEW)} alert"
+        e.tg.calls.last() shouldBe "answer cb ${Texts.t("en", T.INVALID_TOO_FEW, 1)} alert"
         e.session()!!.step shouldBe 2
     }
 
@@ -462,5 +464,54 @@ class ApplicantFlowTest : StringSpec({
         summary.forEach { it.text.last().isHighSurrogate() shouldBe false }
         summary.first().text shouldBe en(T.SUMMARY_HEADER)
         summary.drop(1).joinToString("") { it.text } shouldBe "One: $answer"
+    }
+
+    "a tap past At most is refused and says the limit" {
+        val e = FlowEnv("af-multi-max")
+        e.group(CHAT2, Form("Hi", listOf(Multi("m", "Pick", listOf("A", "B", "C"), max = 2))))
+        e.join(CHAT2)
+        e.press('t', 0, CHAT2); e.press('t', 1, CHAT2); e.press('t', 2, CHAT2)
+        e.session(CHAT2)!!.state.picks shouldBe setOf(0, 1)
+        e.tg.calls.last() shouldBe "answer cb Choose at most 2. alert"
+        e.press('t', 0, CHAT2); e.press('t', 2, CHAT2) // untick one, and the third fits
+        e.session(CHAT2)!!.state.picks shouldBe setOf(1, 2)
+    }
+
+    "Done with too few picks says the minimum" {
+        val e = FlowEnv("af-multi-min")
+        e.group(CHAT2, Form("Hi", listOf(Multi("m", "Pick", listOf("A", "B", "C"), min = 2))))
+        e.join(CHAT2)
+        e.press('t', 0, CHAT2); e.press('d', 0, CHAT2)
+        e.tg.calls.last() shouldBe "answer cb Choose at least 2. alert"
+        e.session(CHAT2)!!.step shouldBe 0
+    }
+
+    "a multiple-choice question says how many to choose, and keeps saying it while ticking" {
+        val e = FlowEnv("af-multi-hint")
+        e.group(CHAT2, Form("Hi", listOf(
+            Multi("m", "Pick", listOf("A", "B", "C"), max = 2),
+            Multi("x", "Exactly", listOf("A", "B", "C"), min = 2, max = 2),
+            Multi("o", "Optional", listOf("A", "B", "C"), required = false),
+        )))
+        e.join(CHAT2)
+        e.last().text shouldBe "Pick\n\nChoose 1 to 2."
+        e.press('t', 0, CHAT2)
+        e.tg.calls.last() shouldStartWith "edit $U "
+        e.tg.calls.last() shouldEndWith "Pick\n\nChoose 1 to 2."
+        e.press('d', 0, CHAT2)
+        e.last().text shouldBe "Exactly\n\nChoose 2."
+        e.press('t', 0, CHAT2); e.press('t', 1, CHAT2); e.press('d', 0, CHAT2)
+        e.last().text shouldBe "Optional\n\nChoose up to 3."
+    }
+
+    "an optional multiple choice is At least 0: no Skip button, Done with nothing skips it" {
+        val e = FlowEnv("af-multi-optional")
+        // min = 1 left over from when the question was required: optional wins
+        e.group(CHAT2, Form("Hi", listOf(Multi("o", "Optional", listOf("A", "B", "C"), min = 1, required = false), Link("l", "Site"))))
+        e.join(CHAT2)
+        e.last().text shouldBe "Optional\n\nChoose up to 3."
+        e.last().buttons.flatten().map { it.text } shouldBe listOf("A", "B", "C", en(T.DONE))
+        e.press('d', 0, CHAT2)
+        e.session(CHAT2)!!.step shouldBe 1
     }
 })

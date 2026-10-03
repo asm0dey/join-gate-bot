@@ -18,6 +18,11 @@ private val expectedArgs: Map<T, Array<Any>> = mapOf(
     T.ALREADY_DECIDED to arrayOf("Ann"),
     T.REVIEW_HEADER to arrayOf("Bob", "Group"),
     T.REVIEW_UNREACHABLE to arrayOf("Bob"),
+    T.INVALID_TOO_FEW to arrayOf(2),
+    T.INVALID_TOO_MANY to arrayOf(3),
+    T.MULTI_EXACT to arrayOf(2),
+    T.MULTI_RANGE to arrayOf(1, 3),
+    T.MULTI_UP_TO to arrayOf(3),
 )
 
 class TelegramTest : StringSpec({
@@ -100,5 +105,5 @@ class TelegramTest : StringSpec({
     "forgotten args throw instead of leaking the template" {
         shouldThrow<java.util.MissingFormatArgumentException> { Texts.t(null, T.NUDGE) }
     }
-    "every Reason has a text" { Reason.entries.forEach { Texts.t(null, it.text()).shouldNotBeBlank() } }
+    "every Reason has a text" { Reason.entries.forEach { Texts.t(null, it.text(), *(expectedArgs[it.text()] ?: emptyArray())).shouldNotBeBlank() } }
 })

@@ -111,10 +111,13 @@ class ApplicantFlow(
             }
 
             't' if field is Multi && idx in field.options.indices -> {
+                // a tick past At most is refused here, not left for Done to reject
+                if (idx !in s.state.picks && s.state.picks.size >= field.maxPicks)
+                    return bot.answerCallback(callbackId, Texts.t(s.lang, T.INVALID_TOO_MANY, field.maxPicks), alert = true)
                 val picks = s.state.picks.let { if (idx in it) it - idx else it + idx }
                 val next = s.copy(state = s.state.copy(picks = picks))
                 put(next)
-                bot.answerCallback(callbackId); bot.editText(userId, messageId, field.prompt, keyboard(next, field))
+                bot.answerCallback(callbackId); bot.editText(userId, messageId, question(next, field), keyboard(next, field))
                 return
             }
 
@@ -132,8 +135,10 @@ class ApplicantFlow(
                 bot.answerCallback(callbackId); bot.editText(userId, messageId, field.prompt); advance(s, form, c.value)
             }
             // a skip on a required field or an unknown option only comes from a forged button
-            is Check.Invalid -> if (c.reason == Reason.TOO_FEW || c.reason == Reason.TOO_MANY)
-                bot.answerCallback(callbackId, Texts.t(s.lang, c.reason.text()), alert = true) else stale()
+            is Check.Invalid -> if (field is Multi && (c.reason == Reason.TOO_FEW || c.reason == Reason.TOO_MANY)) {
+                val limit = if (c.reason == Reason.TOO_FEW) field.minPicks else field.maxPicks
+                bot.answerCallback(callbackId, Texts.t(s.lang, c.reason.text(), limit), alert = true)
+            } else stale()
         }
     }
 
@@ -266,7 +271,7 @@ class ApplicantFlow(
      */
     private suspend fun ask(s: Session, form: Form, dest: Long = s.userId, firstContact: Boolean = false): Boolean {
         val field = form.fields.getOrNull(s.step)
-        val messages = if (field != null) listOf(field.prompt to keyboard(s, field)) else summary(s, form).let { c ->
+        val messages = if (field != null) listOf(question(s, field) to keyboard(s, field)) else summary(s, form).let { c ->
             c.dropLast(1).map { it to emptyList<List<Button>>() } +
                     (c.last() to listOf(listOf(button(s, T.SUBMIT, 'S'), button(s, T.START_OVER, 'R'))))
         }
@@ -278,6 +283,18 @@ class ApplicantFlow(
             }
         }
         return true
+    }
+
+    /** The question as sent: a multiple choice also says how many to pick. */
+    private fun question(s: Session, field: Field): String {
+        if (field !is Multi) return field.prompt
+        val (min, max) = field.minPicks to field.maxPicks
+        val hint = when {
+            min == max -> Texts.t(s.lang, T.MULTI_EXACT, max)
+            min == 0 -> Texts.t(s.lang, T.MULTI_UP_TO, max)
+            else -> Texts.t(s.lang, T.MULTI_RANGE, min, max)
+        }
+        return "${field.prompt}\n\n$hint"
     }
 
     private fun button(s: Session, key: T, action: Char, idx: Int = 0) =
@@ -295,7 +312,8 @@ class ApplicantFlow(
             is Consent -> listOf(listOf(button(s, T.AGREE, 'y')), listOf(button(s, T.DISAGREE, 'n')))
             else -> emptyList()
         }
-        return if (field.required) rows else rows + listOf(listOf(button(s, T.SKIP, 's')))
+        // an optional multiple choice skips through Done with nothing picked, so it needs no Skip
+        return if (field.required || field is Multi) rows else rows + listOf(listOf(button(s, T.SKIP, 's')))
     }
 
     /** "prompt: answer" per field ("—" when skipped), split into messages of at most [SUMMARY_CHUNK] chars at line boundaries. */

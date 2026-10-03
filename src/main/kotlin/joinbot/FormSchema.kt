@@ -19,6 +19,15 @@ data class Radio(override val id: String, override val prompt: String, val optio
 data class Multi(override val id: String, override val prompt: String, val options: List<String>,
                  val min: Int? = null, val max: Int? = null, override val required: Boolean = true) : Field
 
+/**
+ * The fewest picks Done accepts. An optional multiple choice is "at least 0": Done with nothing picked
+ * skips it, whatever min was left from when it was required. A required one defaults to one.
+ */
+val Multi.minPicks get() = if (required) min ?: 1 else 0
+
+/** The most picks a tick may reach: an unset or oversized max means every option. */
+val Multi.maxPicks get() = minOf(max ?: options.size, options.size)
+
 @Serializable @SerialName("text")
 data class Text(override val id: String, override val prompt: String, val maxLen: Int = TEXT_MAX,
                 override val required: Boolean = true) : Field
@@ -70,7 +79,7 @@ fun validate(field: Field, input: Input): Check {
         is Multi -> when (input) {
             is Input.PickedMany -> {
                 val sel = input.idxs.sorted()
-                val min = field.min ?: if (field.required) 1 else 0
+                val min = field.minPicks
                 when {
                     sel.any { it !in field.options.indices } -> bad(Reason.BAD_OPTION)
                     sel.size < min -> bad(Reason.TOO_FEW)

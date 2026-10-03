@@ -6,6 +6,7 @@ import java.util.Locale
 //   NUDGE(count: Int), GROUP_HANDOFF(count: Int)
 //   DECIDED_BY_APPROVED(name), DECIDED_BY_REJECTED(name), ALREADY_DECIDED(name)
 //   REVIEW_HEADER(applicantName, groupTitle), REVIEW_UNREACHABLE(applicantName)
+//   INVALID_TOO_FEW(min: Int), INVALID_TOO_MANY(max: Int), MULTI_EXACT(n: Int), MULTI_RANGE(min: Int, max: Int), MULTI_UP_TO(max: Int)
 // AN_ADMIN is the decider name when they are no longer an admin.
 // Always formatted, so a forgotten arg throws. Avoid a literal percent sign in any text.
 
@@ -15,7 +16,7 @@ enum class T {
     TYPE_OTHER, SUBMITTED, DECLINED_CONSENT, EXPIRED, GROUP_GONE, STALE_BUTTON, HOW_TO_JOIN, APPROVED_USER, REJECTED_USER,
     REVIEW_HEADER, REVIEW_UNREACHABLE, APPROVE, REJECT, DECIDED_BY_APPROVED, DECIDED_BY_REJECTED, ALREADY_DECIDED, NOT_ADMIN_ANYMORE,
     TRY_AGAIN, WITHDRAWN, AN_ADMIN, NUDGE, NEEDS_INVITE_RIGHT, EXPORT_READY,
-    MANUAL_REVIEW, REVIEW_SUSPENDED, GROUP_HANDOFF,
+    MANUAL_REVIEW, REVIEW_SUSPENDED, GROUP_HANDOFF, MULTI_EXACT, MULTI_RANGE, MULTI_UP_TO,
 }
 
 private val en = mapOf(
@@ -34,8 +35,11 @@ private val en = mapOf(
     T.INVALID_TOO_SMALL to "That number is too small.",
     T.INVALID_TOO_LARGE to "That number is too large.",
     T.INVALID_NOT_A_LINK to "Please send a full link starting with http:// or https://.",
-    T.INVALID_TOO_FEW to "Please choose more options.",
-    T.INVALID_TOO_MANY to "Please choose fewer options.",
+    T.INVALID_TOO_FEW to "Choose at least %d.",
+    T.INVALID_TOO_MANY to "Choose at most %d.",
+    T.MULTI_EXACT to "Choose %d.",
+    T.MULTI_RANGE to "Choose %d to %d.",
+    T.MULTI_UP_TO to "Choose up to %d.",
     T.INVALID_WRONG_KIND to "Please use the buttons or send text, as the question asks.",
     T.TYPE_OTHER to "Type your answer.",
     T.SUBMITTED to "Thanks! Your answers were sent to the admins. You will get a message when they decide.",
@@ -81,8 +85,11 @@ private val ru = mapOf(
     T.INVALID_TOO_SMALL to "Число слишком маленькое.",
     T.INVALID_TOO_LARGE to "Число слишком большое.",
     T.INVALID_NOT_A_LINK to "Пришлите полную ссылку, начинающуюся с http:// или https://.",
-    T.INVALID_TOO_FEW to "Выберите больше вариантов.",
-    T.INVALID_TOO_MANY to "Выберите меньше вариантов.",
+    T.INVALID_TOO_FEW to "Выберите не меньше %d.",
+    T.INVALID_TOO_MANY to "Можно выбрать не больше %d.",
+    T.MULTI_EXACT to "Выберите %d.",
+    T.MULTI_RANGE to "Выберите от %d до %d.",
+    T.MULTI_UP_TO to "Выберите до %d.",
     T.INVALID_WRONG_KIND to "Ответьте так, как просит вопрос: кнопкой или текстом.",
     T.TYPE_OTHER to "Напишите свой ответ.",
     T.SUBMITTED to "Спасибо! Ответы отправлены администраторам. Когда они решат, вам придёт сообщение.",
