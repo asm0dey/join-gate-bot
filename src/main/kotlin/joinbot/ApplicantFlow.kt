@@ -46,7 +46,7 @@ class ApplicantFlow(
 
     internal fun lockCount() = locks.size
 
-    suspend fun onJoinRequest(chatId: Long, userId: Long, userChatId: Long, profile: Profile, lang: String?) =
+    suspend fun onJoinRequest(chatId: Long, userId: Long, userChatId: Long, profile: Profile, lang: String?) {
         locked(userId) {
             // decision, manual-review and group-gone DMs reach the applicant outside any session
             if (lang != null) users.setLang(userId, lang)
@@ -57,8 +57,8 @@ class ApplicantFlow(
             val s = Session(userId, chatId, version, 0, SessionState(profile), lang, clock.instant())
             if (active != null && active.chatId != chatId) sessions.put(s.copy(step = WAITING))
             else begin(s, userChatId)
-            Unit
         }
+    }
 
     /** False when [userId] has no active session. */
     suspend fun onMessage(userId: Long, text: String?, lang: String?): Boolean = locked(userId) {
