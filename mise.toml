@@ -18,6 +18,13 @@ depends = ["web:install"]
 dir = "web"
 run = "bun run build"
 
+[tasks."web:preview"]
+description = "Mini App with fake data at http://127.0.0.1:5179, no bot needed"
+depends = ["web:install"]
+dir = "web"
+# the fake API takes the backend's port, which vite proxies /api to
+run = "bun dev/mock-api.ts & trap 'kill $!' EXIT; bunx vite --host 127.0.0.1 --port 5179 --strictPort"
+
 [tasks."backend:test"]
 run = "./mvnw -B test"
 

@@ -4,5 +4,5 @@
     "strict": true, "verbatimModuleSyntax": true, "lib": ["ES2022", "DOM"],
     "types": ["vite/client", "bun"], "skipLibCheck": true, "noEmit": true
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte", "vite.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.svelte", "dev/**/*.ts", "vite.config.ts"]
 }
