@@ -40,18 +40,29 @@ private class Env(name: String) {
 }
 
 class ReviewServiceTest : StringSpec({
-    "fan-out reaches deciders who started the bot" {
+    "fan-out tries every decider; copies land with the reachable ones" {
         val e = Env("fan-out")
         e.group(CHAT, admin(1), admin(2), admin(3))
         e.users.started(1, "en"); e.users.started(2, "ru")
+        e.tg.sendResultByChat[3] = Sent.Forbidden // never wrote to the bot
         val id = e.pending()
         e.review.submit(id)
-        e.tg.sent.map { it.chatId } shouldBe listOf(1L, 2L)
+        e.tg.sent.map { it.chatId } shouldBe listOf(1L, 2L, 3L)
         e.tg.sent.forEach { m -> m.buttons.flatten().map { it.data } shouldBe listOf("r|$id|a", "r|$id|j") }
         e.tg.sent[0].buttons.flatten().map { it.text } shouldBe listOf(Texts.t("en", T.APPROVE), Texts.t("en", T.REJECT))
         e.tg.sent[1].buttons.flatten().map { it.text } shouldBe listOf(Texts.t("ru", T.APPROVE), Texts.t("ru", T.REJECT))
         e.tg.sent[0].text shouldContain "Why join?: fun\nWhere from?: Oslo"
         e.subs.reviewMessages(id).map { it.first }.sorted() shouldBe listOf(1L, 2L)
+    }
+
+    "an admin who joined through the form gets copies without /start" {
+        val e = Env("applicant-admin")
+        e.group(CHAT, admin(1))
+        e.users.setLang(1, "en") // what onJoinRequest records; the form was answered without /start
+        val id = e.pending()
+        e.review.submit(id)
+        e.subs.reviewMessages(id).map { it.first } shouldBe listOf(1L)
+        e.tg.calls.none { it.startsWith("send $CHAT ") } shouldBe true
     }
 
     "forbidden admin is marked and skipped" {
@@ -181,6 +192,7 @@ class ReviewServiceTest : StringSpec({
     "no reachable decider nudges at most hourly" {
         val e = Env("nudge")
         e.group(CHAT, admin(1))
+        e.tg.sendResultByChat[1] = Sent.Forbidden
         fun nudges() = e.tg.calls.filter { it.startsWith("send $CHAT ") }
         e.review.submit(e.pending())
         e.clock.now = e.clock.now.plus(Duration.ofMinutes(30))

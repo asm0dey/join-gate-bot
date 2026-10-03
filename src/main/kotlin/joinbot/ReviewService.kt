@@ -23,8 +23,9 @@ class ReviewService(
         val g = groups.get(s.chatId)?.takeIf { it.active } ?: return
         val form = s.formVersion?.let { forms.version(s.chatId, it) }
         var reached = 0
+        // no dm_ok pre-check: an admin who joined through the form wrote to the bot but never sent /start; a 403 tells instead
         for (adminId in admins.deciders(s.chatId)) {
-            if (users.dmOk(adminId) && sendCopy(s, form, adminId)) reached++
+            if (sendCopy(s, form, adminId)) reached++
         }
         if (reached > 0) return
         val now = clock.instant()
