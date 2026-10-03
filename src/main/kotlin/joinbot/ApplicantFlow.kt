@@ -62,8 +62,6 @@ class ApplicantFlow(
 
     /** False when [userId] has no active session. */
     suspend fun onMessage(userId: Long, text: String?, lang: String?): Boolean = locked(userId) {
-        // they wrote to the bot, so it may now write to them freely
-        users.started(userId, null)
         val s = sessions.active(userId)?.withLang(lang) ?: return@locked false
         val form = formOf(s) ?: return@locked false
         val field = form.fields.getOrNull(s.step)
@@ -203,21 +201,17 @@ class ApplicantFlow(
         val form = formOf(s) ?: return false
         val start = fresh(s)
         put(start)
-        // Telegram lets a bot write first only briefly (a 403 cut a form short after one answer), so the
-        // questions wait until the user has messaged the bot; /start resumes this session at step 0
-        val opened = users.dmOk(s.userId)
         // a blank welcome only survives in forms saved before validateForm required one; Telegram rejects empty text
         val welcome = listOfNotNull(
             form.welcome.takeIf { it.isNotBlank() },
-            Texts.t(s.lang, T.WELCOME_SKIP).takeIf { form.fields.any { !it.required } },
-            Texts.t(s.lang, T.PRESS_START).takeIf { !opened }).joinToString("\n\n")
+            Texts.t(s.lang, T.WELCOME_SKIP).takeIf { form.fields.any { !it.required } }).joinToString("\n\n")
         if (welcome.isEmpty()) return ask(start, form, dest, firstContact = true)
         val sent = bot.sendText(dest, welcome)
         if (sent !is Sent.Ok) {
             unreachable(start, sent)
             return false
         }
-        return !opened || ask(start, form, dest)
+        return ask(start, form, dest)
     }
 
     /** The user can't be messaged: reviewers get [s] with whatever was answered so far. Only a 403 marks the DM closed. */

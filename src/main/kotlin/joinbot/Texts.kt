@@ -11,7 +11,7 @@ import java.util.Locale
 // Always formatted, so a forgotten arg throws. Avoid a literal percent sign in any text.
 
 enum class T {
-    WELCOME_SKIP, PRESS_START, SKIP, OTHER, DONE, AGREE, DISAGREE, SUBMIT, START_OVER, SUMMARY_HEADER, INVALID_REQUIRED, INVALID_TOO_LONG,
+    WELCOME_SKIP, SKIP, OTHER, DONE, AGREE, DISAGREE, SUBMIT, START_OVER, SUMMARY_HEADER, INVALID_REQUIRED, INVALID_TOO_LONG,
     INVALID_NOT_A_NUMBER, INVALID_TOO_SMALL, INVALID_TOO_LARGE, INVALID_NOT_A_LINK, INVALID_TOO_FEW, INVALID_TOO_MANY, INVALID_WRONG_KIND,
     TYPE_OTHER, SUBMITTED, DECLINED_CONSENT, EXPIRED, GROUP_GONE, STALE_BUTTON, HOW_TO_JOIN, APPROVED_USER, REJECTED_USER,
     REVIEW_HEADER, REVIEW_UNREACHABLE, APPROVE, REJECT, DECIDED_BY_APPROVED, DECIDED_BY_REJECTED, ALREADY_DECIDED, NOT_ADMIN_ANYMORE,
@@ -21,7 +21,6 @@ enum class T {
 
 private val en = mapOf(
     T.WELCOME_SKIP to "Optional questions have a Skip button.",
-    T.PRESS_START to "Tap /start to begin.",
     T.SKIP to "Skip",
     T.OTHER to "Other",
     T.DONE to "Done",
@@ -72,7 +71,6 @@ private val en = mapOf(
 
 private val ru = mapOf(
     T.WELCOME_SKIP to "У необязательных вопросов есть кнопка «Пропустить».",
-    T.PRESS_START to "Нажмите /start, чтобы начать.",
     T.SKIP to "Пропустить",
     T.OTHER to "Другое",
     T.DONE to "Готово",

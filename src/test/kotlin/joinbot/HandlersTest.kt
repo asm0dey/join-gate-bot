@@ -68,8 +68,7 @@ class HandlersTest : StringSpec({
     "join request update reaches the flow" {
         val e = HandlerEnv("h-join")
         joinRequest(upd(joinJson(""""from":${user(U)},""")) as ChatJoinRequestUpdate)
-        // a first-time applicant: the questions wait for /start
-        e.tg.sent.map { it.chatId to it.text } shouldBe listOf(U_CHAT to "Hi\n\n${Texts.t("en", T.PRESS_START)}")
+        e.tg.sent.map { it.chatId to it.text } shouldBe listOf(U_CHAT to "Hi", U_CHAT to "Why?")
     }
 
     "private text and f| callback route to the flow, r| to review" {
