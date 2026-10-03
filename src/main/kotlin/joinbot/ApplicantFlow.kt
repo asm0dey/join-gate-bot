@@ -28,12 +28,23 @@ class ApplicantFlow(
     private val bot: TelegramBot,
     private val clock: Clock,
 ) {
-    // ponytail: one Mutex per user ever seen, never evicted; evict idle entries if memory matters
-    private val locks = ConcurrentHashMap<Long, Mutex>()
+    /** [users] counts holders and waiters; it is only touched inside [locks]' per-key `compute`. */
+    private class UserLock { val mutex = Mutex(); var users = 0 }
+
+    // An entry lives only while someone holds or waits for it, so a flood of one-off join requests can't grow it.
+    private val locks = ConcurrentHashMap<Long, UserLock>()
 
     /** Every public entry point runs under the user's lock, so one user's updates never interleave. */
-    private suspend inline fun <R> locked(userId: Long, block: () -> R): R =
-        locks.computeIfAbsent(userId) { Mutex() }.withLock { block() }
+    private suspend inline fun <R> locked(userId: Long, block: () -> R): R {
+        val lock = locks.compute(userId) { _, l -> (l ?: UserLock()).also { it.users++ } }!!
+        try {
+            return lock.mutex.withLock { block() }
+        } finally {
+            locks.compute(userId) { _, l -> l!!.also { it.users-- }.takeIf { it.users > 0 } }
+        }
+    }
+
+    internal fun lockCount() = locks.size
 
     suspend fun onJoinRequest(chatId: Long, userId: Long, userChatId: Long, profile: Profile, lang: String?) =
         locked(userId) {

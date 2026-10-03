@@ -395,6 +395,7 @@ class ApplicantFlowTest : StringSpec({
         }
         e.subs.list(CHAT, null).size shouldBe 1
         e.stale() shouldBe 1
+        e.flow.lockCount() shouldBe 0
     }
 
     "concurrent joins to two chats leave one active session" {
@@ -405,6 +406,7 @@ class ApplicantFlowTest : StringSpec({
             launch(Dispatchers.Default) { e.join(CHAT2) }
         }
         e.sessions.forUser(U).map { it.step }.sorted() shouldBe listOf(WAITING, 0)
+        e.flow.lockCount() shouldBe 0
     }
 
     "submit after a create whose session delete failed does not resubmit" {
