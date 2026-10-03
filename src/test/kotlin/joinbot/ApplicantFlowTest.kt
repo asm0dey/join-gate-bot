@@ -32,7 +32,8 @@ private val form = Form("Hi! A few questions before you join", listOf(
     Consent("a7", "Privacy terms… Do you agree?"),
 ))
 
-private class FlowEnv(name: String) {
+/** [opened]: the applicant has messaged the bot before, so the questions follow the welcome at once. */
+private class FlowEnv(name: String, opened: Boolean = true) {
     val db = testDb(name)
     val clock = TestClock()
     val tg = FakeTelegram()
@@ -44,7 +45,7 @@ private class FlowEnv(name: String) {
     val review = ReviewService(subs, forms, groups, users, AdminCheck(tg.bot, clock), tg.bot, clock)
     val flow = ApplicantFlow(groups, forms, sessions, subs, users, review, tg.bot, clock)
 
-    init { group(CHAT); users.started(ADMIN, "en") }
+    init { group(CHAT); users.started(ADMIN, "en"); if (opened) users.started(U, "en") }
 
     fun group(chat: Long, f: Form = form) {
         groups.upsert(chat, "Club$chat", true)
@@ -84,6 +85,26 @@ class ApplicantFlowTest : StringSpec({
         e.tg.sent[1].buttons.flatten().map { it.text } shouldBe listOf("Limassol", "Nicosia", en(T.OTHER))
         e.tg.sent[1].buttons.flatten().map { it.data } shouldBe listOf("f|$CHAT|0|p|0", "f|$CHAT|0|p|1", "f|$CHAT|0|o|0")
         e.session()!!.step shouldBe 0
+    }
+
+    "an applicant who never messaged the bot gets the welcome only; /start brings question 1" {
+        val e = FlowEnv("af-not-opened", opened = false)
+        e.join()
+        e.tg.sent.map { it.text } shouldBe listOf("${form.welcome}\n\n${en(T.WELCOME_SKIP)}\n\n${en(T.PRESS_START)}")
+        e.tg.sent.single().buttons.shouldBeEmpty()
+        e.session()!!.step shouldBe 0
+        e.users.started(U, "en")
+        e.flow.onStart(U, "en") shouldBe true
+        e.last().text shouldBe "Where do you live?"
+        e.last().chatId shouldBe U
+    }
+
+    "an applicant who types instead of /start opens the DM too" {
+        val e = FlowEnv("af-typed-open", opened = false)
+        e.join()
+        e.say("hi")
+        e.users.dmOk(U) shouldBe true
+        e.last().text shouldBe "Where do you live?"
     }
 
     "a legacy blank welcome is not sent" {
@@ -225,7 +246,7 @@ class ApplicantFlowTest : StringSpec({
     }
 
     "DM forbidden → unreachable submission to reviewers" {
-        val e = FlowEnv("af-forbidden")
+        val e = FlowEnv("af-forbidden", opened = false)
         e.tg.sendResultByChat[U_CHAT] = Sent.Forbidden
         e.join()
         val s = e.subs.list(CHAT, Status.PENDING).single()
@@ -289,7 +310,7 @@ class ApplicantFlowTest : StringSpec({
     }
 
     "a join request stores the applicant's language, leaving dm_ok alone" {
-        val e = FlowEnv("af-lang")
+        val e = FlowEnv("af-lang", opened = false)
         e.flow.onJoinRequest(CHAT, U, U_CHAT, ann, "ru")
         e.users.lang(U) shouldBe "ru"
         e.users.dmOk(U) shouldBe false

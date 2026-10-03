@@ -15,9 +15,12 @@ import eu.vendeli.tgbot.types.component.Response
 import eu.vendeli.tgbot.types.msg.Message
 import eu.vendeli.tgbot.utils.builders.InlineKeyboardMarkupBuilder
 import kotlinx.coroutines.CancellationException
+import org.slf4j.LoggerFactory
+
+private val log = LoggerFactory.getLogger("joinbot.Telegram")
 
 // Every Telegram call the services make. Plain text only: parse_mode is never set, so admin- and user-written
-// text needs no escaping. Nothing here logs.
+// text needs no escaping. Only a refused send logs, and only Telegram's reason.
 
 data class Button(val text: String, val data: String)
 
@@ -100,6 +103,10 @@ private fun Response<*>?.toDecision(): Decision = when (this) {
 
 private fun Response<*>?.toSent(): Sent = when (this) {
     is Response.Success -> Sent.Ok((result as? Message)?.messageId ?: return Sent.Failed)
-    is Response.Failure if errorCode == 403 -> Sent.Forbidden
+    is Response.Failure if errorCode == 403 -> {
+        // Telegram's fixed reason ("bot was blocked by the user", "bot can't initiate conversation…"); no user data
+        log.warn("send refused: {}", description)
+        Sent.Forbidden
+    }
     else -> Sent.Failed
 }

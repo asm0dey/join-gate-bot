@@ -91,6 +91,7 @@ class PurgeTest : StringSpec({
         listOf(-1L, -2L).forEach { e.groups.upsert(it, "G$it", true); e.forms.save(it, Form("hi", listOf(Text("q", "Q?"))), 0, 9, e.clock.instant()) }
         e.session(5, -1, Duration.ofDays(8))
         e.session(5, -2, Duration.ofDays(9), WAITING)
+        e.users.started(5, "en")
         e.purge.runOnce()
         e.sessions.get(5, -1).shouldBeNull()
         e.sessions.get(5, -2)!!.step shouldBe 0
