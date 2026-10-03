@@ -97,3 +97,25 @@ export function validate(f: Form): string[] {
   }
   return out
 }
+
+/** validate()'s and the server's "<id>: <message>" lines, grouped by id ("welcome" and "form" included). */
+export function errorsByField(errors: string[]): Map<string, string[]> {
+  const by = new Map<string, string[]>()
+  for (const e of errors) {
+    const at = e.indexOf(': ')
+    const [key, msg] = at < 0 ? ['form', e] : [e.slice(0, at), e.slice(at + 2)]
+    by.set(key, [...(by.get(key) ?? []), msg])
+  }
+  return by
+}
+
+/** The choice counts a multi-choice field enforces (FormSchema.kt's minPicks/maxPicks), and how far each stepper may go. */
+export function multiRange(f: Multi) {
+  const n = f.options.length
+  const min = f.required ? (f.min ?? 1) : 0
+  const max = Math.min(f.max ?? n, n)
+  return { min, max, minLo: 0, minHi: max, maxLo: Math.max(min, 1), maxHi: n }
+}
+
+/** "At least 0" is how an admin makes a multiple choice optional; there is no separate Required switch. */
+export const setMultiMin = (f: Multi, min: number): Partial<Multi> => ({ min, required: min >= 1 })

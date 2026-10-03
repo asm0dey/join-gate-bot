@@ -2,6 +2,8 @@
   import { onMount } from 'svelte'
   import { api, ApiError, type Group } from '../api'
   import { t } from '../i18n'
+  import Avatar from '../ui/Avatar.svelte'
+  import Icon from '../ui/Icon.svelte'
   let { onopen }: { onopen: (g: Group) => void } = $props()
   let groups = $state<Group[] | null>(null)
   let err = $state('')
@@ -10,19 +12,29 @@
     try { groups = await api.groups() } catch (e) { err = e instanceof ApiError && e.status === 401 ? t.noAuth : t.loadFail }
   }
   onMount(load)
+  const status = (g: Group) => (!g.active ? t.inactive : g.hasForm ? t.formLive : t.noFormYet)
 </script>
 
-<h1 class="mb-3 text-lg font-semibold">{t.groups}</h1>
+<div class="cap">{t.yourGroups}</div>
 {#if err}
-  <div class="alert alert-error"><span>{err}</span><button class="btn btn-sm" onclick={load}>{t.retry}</button></div>
+  <div class="rounded-box bg-base-100 px-4 py-3">{err}</div>
+  {#if err !== t.noAuth}<button class="btn btn-ghost btn-sm mt-1 text-info" onclick={load}>{t.retry}</button>{/if}
 {:else if !groups}
-  <span class="loading loading-spinner"></span>
+  <div class="flex justify-center py-6"><span class="loading loading-spinner text-primary"></span></div>
 {:else if groups.length === 0}
-  <p class="text-neutral">{t.noGroups}</p>
+  <div class="rounded-box bg-base-100 px-4 py-3">{t.noGroups}</div>
 {:else}
-  <ul class="flex flex-col gap-2">
-    {#each groups as g}
-      <li><button class="btn btn-block justify-start bg-base-100" onclick={() => onopen(g)}>{g.title}{#if !g.active}<span class="badge badge-ghost badge-sm">{t.inactive}</span>{/if}</button></li>
+  <div class="list rounded-box bg-base-100">
+    {#each groups as g (g.id)}
+      <button class="list-row items-center py-2.5 text-left active:bg-base-200" onclick={() => onopen(g)}>
+        <Avatar id={g.id} name={g.title} />
+        <div class="min-w-0">
+          <div class="truncate">{g.title}</div>
+          <div class="truncate text-[13px] text-hint">{status(g)}</div>
+        </div>
+        <span class="text-hint"><Icon name="chevron" size={16} /></span>
+      </button>
     {/each}
-  </ul>
+  </div>
 {/if}
+<p class="foot">{t.missingGroup}</p>

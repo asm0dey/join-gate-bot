@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { addField, moveField, removeField, updateField, validate, type Form, type Text, type Multi } from './editor'
+import { addField, errorsByField, moveField, multiRange, setMultiMin, removeField, updateField, validate, type Form, type Text, type Multi } from './editor'
 
 const empty: Form = { welcome: '', fields: [] }
 
@@ -67,4 +67,28 @@ test('validate: limits and lengths', () => {
     .toEqual(['a: prompt longer than 1000 chars', 'a: option label empty or longer than 64 chars'])
   const many = Array.from({ length: 51 }, (_, i) => ({ id: 'i' + i, type: 'link', prompt: 'p', required: true }))
   expect(validate(form(...many))).toEqual(['form: more than 50 fields'])
+})
+
+test('errorsByField groups messages under their field, welcome or form', () => {
+  const by = errorsByField(['welcome: empty', 'a4: duplicate id', 'a4: empty prompt', 'form: empty field id'])
+  expect(by.get('welcome')).toEqual(['empty'])
+  expect(by.get('a4')).toEqual(['duplicate id', 'empty prompt'])
+  expect(by.get('form')).toEqual(['empty field id'])
+  expect(by.get('zz')).toBeUndefined()
+})
+
+test('multiRange: At least 0 is optional, an optional field never asks for more, bounds keep min <= max <= options', () => {
+  const m = (p: Partial<Multi>): Multi => ({ id: 'm', type: 'multi', prompt: 'p', options: ['a', 'b', 'c'], required: true, ...p })
+  expect(multiRange(m({}))).toEqual({ min: 1, max: 3, minLo: 0, minHi: 3, maxLo: 1, maxHi: 3 })
+  expect(multiRange(m({ required: false }))).toEqual({ min: 0, max: 3, minLo: 0, minHi: 3, maxLo: 1, maxHi: 3 })
+  expect(multiRange(m({ required: false, min: 2 })).min).toBe(0)
+  expect(multiRange(m({ min: 2, max: 2 }))).toEqual({ min: 2, max: 2, minLo: 0, minHi: 2, maxLo: 2, maxHi: 3 })
+  // a max left over from a longer option list shows as the option count
+  expect(multiRange(m({ max: 5 })).max).toBe(3)
+})
+
+test('setMultiMin: At least 0 makes the field optional, anything above makes it required', () => {
+  const m: Multi = { id: 'm', type: 'multi', prompt: 'p', options: ['a', 'b'], required: true }
+  expect(setMultiMin(m, 0)).toEqual({ min: 0, required: false })
+  expect(setMultiMin(m, 2)).toEqual({ min: 2, required: true })
 })

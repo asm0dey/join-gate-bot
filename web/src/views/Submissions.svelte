@@ -2,80 +2,90 @@
   import { onMount } from 'svelte'
   import { api, ApiError, STATUSES, type Group, type Status, type SubmissionDetail, type SubmissionRow } from '../api'
   import { t } from '../i18n'
-  import { tg } from '../tg'
+  import { confirmed, haptic } from '../tg'
+  import Avatar from '../ui/Avatar.svelte'
+  import BackButton from '../ui/BackButton.svelte'
+  import MainButton from '../ui/MainButton.svelte'
   let { group }: { group: Group } = $props()
   let status = $state<Status | ''>('')
   let rows = $state<SubmissionRow[] | null>(null)
   let detail = $state<SubmissionDetail | null>(null)
   let msg = $state('')
-  let confirming = $state(false)
+  let busy = $state(false)
 
   async function load() {
     msg = ''
     try { rows = await api.submissions(group.id, status || undefined) } catch { msg = t.loadFail }
   }
   onMount(load)
+  const filter = (s: Status | '') => { if (s !== status) { haptic.tick(); status = s; rows = null; load() } }
   async function open(r: SubmissionRow) {
     try { detail = await api.submission(group.id, r.id) } catch { msg = t.loadFail }
   }
   async function del() {
-    confirming = false
-    try { await api.remove(group.id, detail!.row.id); detail = null; await load() } catch { msg = t.saveFail }
+    if (!(await confirmed(t.confirmDelete))) return
+    try { await api.remove(group.id, detail!.row.id); haptic.ok(); detail = null; await load() } catch { haptic.error(); msg = t.saveFail }
   }
-  const ask = () => (tg ? tg.showConfirm(t.confirmDelete, (ok) => ok && del()) : (confirming = true))
   async function exportCsv() {
-    try { await api.exportCsv(group.id); msg = t.exported }
-    catch (e) { msg = e instanceof ApiError && e.status === 409 ? t.exportNoBot : t.saveFail }
+    busy = true; msg = ''
+    try { await api.exportCsv(group.id); haptic.ok(); msg = t.exported }
+    catch (e) { haptic.error(); msg = e instanceof ApiError && e.status === 409 ? t.exportNoBot : t.saveFail }
+    finally { busy = false }
   }
-  const who = (r: SubmissionRow) => r.username ? `${r.name} @${r.username}` : r.name
-  const date = (s: string) => new Date(s).toLocaleString()
+  const date = (s: string) => new Date(s).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+  const badge: Record<Status, string> = { PENDING: 'badge-info', APPROVED: 'badge-success', REJECTED: 'badge-error', WITHDRAWN: 'badge-ghost', EXPIRED: 'badge-ghost' }
 </script>
 
+{#snippet pill(s: Status)}<span class="badge badge-soft badge-sm font-semibold {badge[s]}">{t[s]}</span>{/snippet}
+
 {#if detail}
-  <button class="btn btn-sm btn-ghost mb-2" onclick={() => (detail = null)}>← {t.back}</button>
-  <div class="card bg-base-100 p-3">
-    <div class="font-semibold">{who(detail.row)}</div>
-    <div class="text-sm text-neutral">{t[detail.row.status]} · {date(detail.row.createdAt)}</div>
-    {#if detail.partial}<div role="alert" class="alert alert-warning mt-2 py-2 text-sm">{t.partial}</div>{/if}
-    {#if detail.answers}
-      <dl class="mt-3 flex flex-col gap-2">
-        {#each detail.answers as a}
-          <div><dt class="text-xs text-neutral">{a.prompt}</dt><dd class="whitespace-pre-wrap break-words">{a.value || '—'}</dd></div>
-        {/each}
-      </dl>
-    {:else}<p class="mt-3 text-neutral">{t.noAnswers}</p>{/if}
+  {@const r = detail.row}
+  <div class="fixed inset-0 z-10 overflow-y-auto bg-base-200"><div class="mx-auto max-w-xl px-3 pt-2 pb-8">
+  <BackButton onclick={() => (detail = null)} />
+  <div class="flex flex-col items-center gap-1 pt-3 pb-2 text-center">
+    <Avatar id={r.userId} name={r.name} size={72} />
+    <div class="mt-1 text-[19px] font-semibold">{r.name}</div>
+    <div class="text-hint">{r.username ? `@${r.username} · ` : ''}{date(r.createdAt)}</div>
+    {@render pill(r.status)}
   </div>
-  <button class="btn btn-error btn-outline mt-3" onclick={ask}>{t.deleteSub}</button>
-  {#if confirming}
-    <dialog class="modal modal-open">
-      <div class="modal-box">
-        <p>{t.confirmDelete}</p>
-        <div class="modal-action">
-          <button class="btn" onclick={() => (confirming = false)}>{t.cancel}</button>
-          <button class="btn btn-error" onclick={del}>{t.del}</button>
+  {#if detail.partial}<div role="alert" class="alert alert-warning alert-soft mb-2 text-sm">{t.partial}</div>{/if}
+  {#if detail.answers}
+    <div class="list rounded-box bg-base-100">
+      {#each detail.answers as a}
+        <div class="list-row block py-2.5">
+          <div class="text-[13px] text-hint">{a.prompt}</div>
+          {#if a.value}<div class="break-words whitespace-pre-wrap">{a.value}</div>{:else}<div class="text-hint">{t.skipped}</div>{/if}
         </div>
-      </div>
-    </dialog>
-  {/if}
-{:else}
-  <div class="mb-3 flex gap-2">
-    <select class="select select-sm flex-1" bind:value={status} onchange={load}>
-      <option value="">{t.all}</option>
-      {#each STATUSES as s}<option value={s}>{t[s]}</option>{/each}
-    </select>
-    <button class="btn btn-sm btn-primary" onclick={exportCsv}>{t.exportCsv}</button>
-  </div>
-  {#if rows === null}<span class="loading loading-spinner"></span>
-  {:else if rows.length === 0}<p class="text-neutral">{t.empty}</p>
-  {:else}
-    <ul class="flex flex-col gap-2">
-      {#each rows as r (r.id)}
-        <li><button class="card w-full bg-base-100 p-3 text-left" onclick={() => open(r)}>
-          <span class="truncate font-medium">{who(r)}</span>
-          <span class="text-xs text-neutral">{t[r.status]} · {date(r.createdAt)}</span>
-        </button></li>
       {/each}
-    </ul>
+    </div>
+  {:else}<div class="rounded-box bg-base-100 px-4 py-3 text-hint">{t.noAnswers}</div>{/if}
+  {#if r.status === 'PENDING'}<p class="foot">{t.decideInDm}</p>{/if}
+  <div class="mt-4 rounded-box bg-base-100">
+    <button class="flex min-h-11 w-full items-center rounded-box px-3.5 text-error active:bg-base-200" onclick={del}>{t.deleteSub}</button>
+  </div>
+  </div></div>
+{:else}
+  <div class="-mx-3 flex gap-1.5 overflow-x-auto px-3 py-1 [scrollbar-width:none]">
+    {#each [['', t.all] as const, ...STATUSES.map((s) => [s, t[s]] as const)] as [s, label]}
+      <button class="btn btn-sm flex-none rounded-full border-0 font-normal shadow-none {status === s ? 'btn-primary font-semibold' : 'bg-base-100'}" onclick={() => filter(s)}>{label}</button>
+    {/each}
+  </div>
+  {#if rows === null}<div class="flex justify-center py-6"><span class="loading loading-spinner text-primary"></span></div>
+  {:else if rows.length === 0}<div class="mt-2 rounded-box bg-base-100 px-4 py-3 text-hint">{t.empty}</div>
+  {:else}
+    <div class="list mt-2 rounded-box bg-base-100">
+      {#each rows as r (r.id)}
+        <button class="list-row items-center py-2.5 text-left active:bg-base-200" onclick={() => open(r)}>
+          <Avatar id={r.userId} name={r.name} />
+          <div class="min-w-0">
+            <div class="truncate">{r.name}{#if r.username}<span class="ml-1 text-hint">@{r.username}</span>{/if}</div>
+            <div class="truncate text-[13px] text-hint">{date(r.createdAt)}</div>
+          </div>
+          {@render pill(r.status)}
+        </button>
+      {/each}
+    </div>
   {/if}
+  <MainButton text={t.exportCsv} {busy} onclick={exportCsv} />
 {/if}
-{#if msg}<p class="mt-3 text-sm">{msg}</p>{/if}
+{#if msg}<p class="foot">{msg}</p>{/if}
