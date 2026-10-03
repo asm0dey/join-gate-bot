@@ -1,0 +1,443 @@
+<title>Join Gate Mini App</title>
+<style>
+/* Layout: a gallery of phone frames, one per screen, each drawn only with Telegram's own theme parameters. */
+:root{
+  --page-bg:#eef0f3; --page-ink:#1b2129; --page-hint:#5d6672; --page-line:#d5d9df; --chip:#ffffff;
+  /* Telegram light theme params, as the client injects them */
+  --tg-bg:#ffffff; --tg-sec:#f0f1f5; --tg-text:#0f1419; --tg-hint:#6f7780; --tg-link:#2481cc;
+  --tg-btn:#3390ec; --tg-btn-text:#ffffff; --tg-sep:#e3e5ea; --tg-header:#ffffff;
+  --tg-accent:#2481cc; --tg-destructive:#e53935; --tg-subtitle:#6f7780;
+  --ok:#2e9e4f; --ok-soft:#e3f4e8; --warn-soft:#fff6db; --warn-ink:#7a5a00; --bad-soft:#fde7e6;
+  --av1:#e17076; --av2:#7bc862; --av3:#65aadd; --av4:#faa774; --av5:#a695e7;
+  --font:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ color-scheme:dark;
+    --page-bg:#13161a; --page-ink:#e7eaee; --page-hint:#98a1ad; --page-line:#2a2f36; --chip:#1c2026; }
+}
+:root[data-theme="dark"]{ color-scheme:dark;
+  --page-bg:#13161a; --page-ink:#e7eaee; --page-hint:#98a1ad; --page-line:#2a2f36; --chip:#1c2026; }
+
+/* the phones switch between Telegram's two themes independently of the page */
+.phones.tg-dark{
+  --tg-bg:#212121; --tg-sec:#181818; --tg-text:#f5f5f5; --tg-hint:#9a9ea4; --tg-link:#6ab3f3;
+  --tg-btn:#3e88d8; --tg-btn-text:#ffffff; --tg-sep:#2e2e2e; --tg-header:#212121;
+  --tg-accent:#6ab3f3; --tg-destructive:#ef5b5b; --tg-subtitle:#9a9ea4;
+  --ok:#5fc27a; --ok-soft:#1d3324; --warn-soft:#3a3320; --warn-ink:#ecd28a; --bad-soft:#3a1f1f;
+}
+
+html{background:var(--page-bg)}
+body{background:var(--page-bg);color:var(--page-ink);font:14px/1.45 var(--font);padding-block:24px 48px;padding-inline:16px}
+.wrap{max-width:1560px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+header.top{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:16px}
+h1{font-size:22px;margin:0;letter-spacing:-.01em;text-wrap:balance}
+.lede{margin:4px 0 0;color:var(--page-hint);max-width:68ch}
+.switch{display:inline-flex;background:var(--chip);border:1px solid var(--page-line);border-radius:999px;padding:3px}
+.switch button{font:inherit;border:0;background:none;color:var(--page-hint);padding:6px 14px;border-radius:999px;cursor:pointer}
+.switch button[aria-pressed="true"]{background:var(--page-ink);color:var(--page-bg)}
+.switch button:focus-visible{outline:2px solid var(--tg-btn);outline-offset:2px}
+
+.phones{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:28px 20px;justify-items:center}
+figure{margin:0;display:flex;flex-direction:column;gap:10px;width:100%;max-width:360px}
+figcaption{color:var(--page-hint);font-size:13px}
+figcaption b{color:var(--page-ink);font-weight:600;display:block;font-size:14px}
+
+.phone{width:100%;min-height:720px;background:var(--tg-bg);color:var(--tg-text);border-radius:28px;overflow:hidden;display:flex;flex-direction:column;
+  box-shadow:0 0 0 1px var(--page-line),0 18px 40px -24px rgba(0,0,0,.35);font-size:15px;position:relative}
+/* Telegram's own header: Close or the native Back button, title, menu */
+.tgbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:12px 14px 10px;background:var(--tg-sec)}
+.tgbar .l{color:var(--tg-link);font-size:15px;display:flex;align-items:center;gap:2px}
+.tgbar .l svg{width:18px;height:18px}
+.tgbar .r{color:var(--tg-link);text-align:right}
+.tgbar .t{font-weight:600;font-size:16px;text-align:center}
+.tgbar .t small{display:block;font-weight:400;font-size:12px;color:var(--tg-hint)}
+.body > *{flex-shrink:0}
+.body{flex:1;background:var(--tg-sec);display:flex;flex-direction:column;gap:6px;padding:6px 12px 16px}
+/* Telegram's own MainButton */
+.mainbtn{padding:10px 12px 14px;background:var(--tg-sec)}
+.mainbtn div{background:var(--tg-btn);color:var(--tg-btn-text);text-align:center;font-weight:600;border-radius:10px;padding:13px;display:flex;justify-content:center;align-items:center;gap:8px}
+.mainbtn div.done{background:var(--ok)}
+.mainbtn svg{width:18px;height:18px}
+
+/* settings-style sections */
+.cap{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--tg-hint);padding:12px 16px 6px}
+.foot{font-size:13px;color:var(--tg-hint);padding:6px 16px 4px;line-height:1.35}
+.sec{background:var(--tg-bg);border-radius:12px;overflow:hidden}
+.row{display:flex;align-items:center;gap:12px;padding:0 14px;min-height:46px}
+.row + .row .rt, .row + .row.sepfull{box-shadow:inset 0 1px 0 var(--tg-sep)}
+.rt{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:10px 0;align-self:stretch}
+.rt .txt{flex:1;min-width:0}
+.rt .ttl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rt .sub{font-size:13px;color:var(--tg-subtitle);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.val{color:var(--tg-hint);font-variant-numeric:tabular-nums}
+.chev{width:16px;height:16px;color:var(--tg-hint);flex:none}
+.link{color:var(--tg-accent)}
+.danger{color:var(--tg-destructive)}
+.ico{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;color:#fff;flex:none}
+.ico svg{width:17px;height:17px}
+
+.av{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:600;font-size:15px;flex:none}
+.pill{font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.pill.pending{background:color-mix(in srgb,var(--tg-accent) 14%,transparent);color:var(--tg-accent)}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.bad{background:var(--bad-soft);color:var(--tg-destructive)}
+.pill.muted{background:var(--tg-sec);color:var(--tg-hint)}
+
+/* segmented control */
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;background:color-mix(in srgb,var(--tg-hint) 14%,transparent);border-radius:9px;padding:2px;font-size:13px;text-align:center;margin:6px 0}
+.seg span{padding:6px 4px;border-radius:7px;color:var(--tg-text)}
+.seg span.on{background:var(--tg-bg);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.chips{display:flex;gap:6px;overflow:hidden;padding:4px 0}
+.chips span{font-size:13px;padding:5px 11px;border-radius:999px;background:var(--tg-bg);color:var(--tg-text);white-space:nowrap}
+.chips span.on{background:var(--tg-btn);color:var(--tg-btn-text);font-weight:600}
+
+/* editor */
+.qhead{display:flex;align-items:center;gap:8px;padding:10px 6px 10px 14px}
+.qhead .kind{flex:1;font-size:13px;color:var(--tg-hint);display:flex;align-items:center;gap:6px}
+.iconbtn{width:36px;height:36px;display:grid;place-items:center;border-radius:8px;color:var(--tg-accent)}
+.iconbtn.danger{color:var(--tg-destructive)}
+.iconbtn.off{color:var(--tg-hint);opacity:.4}
+.iconbtn svg{width:19px;height:19px}
+.input{padding:11px 14px;box-shadow:inset 0 1px 0 var(--tg-sep);line-height:1.35}
+.input .ph{color:var(--tg-hint)}
+.input.err{box-shadow:inset 0 1px 0 var(--tg-sep),inset 3px 0 0 var(--tg-destructive)}
+.errtxt{font-size:13px;color:var(--tg-destructive);padding:4px 16px 0}
+.opt{display:flex;align-items:center;gap:10px;padding:0 6px 0 14px;min-height:44px;box-shadow:inset 0 1px 0 var(--tg-sep)}
+.opt .dot{width:18px;height:18px;border-radius:50%;border:2px solid var(--tg-hint);flex:none;opacity:.6}
+.opt .sq{border-radius:5px}
+.opt span{flex:1}
+.sw{display:inline-block;width:44px;height:26px;border-radius:999px;background:color-mix(in srgb,var(--tg-hint) 35%,transparent);position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.sw.on{background:var(--tg-btn)}
+.sw.on::after{left:20px}
+.nums{display:grid;grid-template-columns:1fr 1fr}
+.nums .row:last-child{box-shadow:inset 1px 0 0 var(--tg-sep)}
+.nums .row{box-shadow:none}
+
+.stepper{display:inline-flex;align-items:center;background:color-mix(in srgb,var(--tg-hint) 14%,transparent);border-radius:9px;margin-right:6px;font-variant-numeric:tabular-nums}
+.stepper b{width:40px;height:32px;display:grid;place-items:center;color:var(--tg-accent);font-weight:500;font-size:20px}
+.stepper b.off{color:var(--tg-hint);opacity:.45}
+.stepper i{font-style:normal;min-width:28px;text-align:center;font-weight:600;box-shadow:inset 1px 0 0 var(--tg-sep),inset -1px 0 0 var(--tg-sep)}
+.numfield{min-width:64px;text-align:right;padding:6px 10px;margin-right:6px;border-radius:8px;background:var(--tg-sec);font-variant-numeric:tabular-nums}
+.numfield.bad{box-shadow:inset 0 0 0 1.5px var(--tg-destructive);color:var(--tg-destructive)}
+
+/* chat preview */
+.chat{background:color-mix(in srgb,var(--tg-btn) 9%,var(--tg-sec));border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:4px}
+.bubble{background:var(--tg-bg);border-radius:14px 14px 14px 4px;padding:8px 11px;max-width:88%;font-size:14px;line-height:1.35}
+.kb{display:grid;grid-template-columns:1fr;gap:4px;max-width:88%}
+.kb span{background:color-mix(in srgb,var(--tg-bg) 55%,transparent);border-radius:8px;text-align:center;font-size:13px;padding:7px 4px;color:var(--tg-text)}
+
+/* sheet */
+.dim{position:absolute;inset:0;background:rgba(0,0,0,.4)}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--tg-sec);border-radius:16px 16px 0 0;padding:8px 12px 18px;display:flex;flex-direction:column;gap:6px}
+.grab{width:36px;height:5px;border-radius:3px;background:color-mix(in srgb,var(--tg-hint) 45%,transparent);align-self:center}
+.sheet h3{margin:4px 4px 2px;font-size:17px;text-align:center}
+
+.qa .row{align-items:flex-start}
+.qa .rt{flex-direction:column;align-items:stretch;gap:2px}
+.qa .q{font-size:13px;color:var(--tg-hint)}
+.warnbox{background:var(--warn-soft);color:var(--warn-ink);border-radius:12px;padding:10px 14px;font-size:14px}
+.profile{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0 6px}
+.profile .av{width:72px;height:72px;font-size:26px}
+.profile b{font-size:19px}
+.profile .sub{color:var(--tg-hint);font-size:14px}
+
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+  <symbol id="check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+  <symbol id="multi" viewBox="0 0 24 24"><path d="M4 6l1.5 1.5L8 5M4 12l1.5 1.5L8 11M4 18l1.5 1.5L8 17M11 6h9M11 12h9M11 18h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="yesno" viewBox="0 0 24 24"><path d="M3 12.5l3 3 5-6M14 9l6 6M20 9l-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="text" viewBox="0 0 24 24"><path d="M5 6h14M12 6v13M9 19h6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+  <symbol id="num" viewBox="0 0 24 24"><path d="M9 4L7 20M17 4l-2 16M4 9h16M3 15h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="shield" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7.5V12l3 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Join Gate mini app, Telegram-native</h1>
+      <p class="lede">The same five screens, redrawn as Telegram's own grouped lists. Back and Save live in Telegram's header and bottom button. Sample data: the spec's example form in a group called Limassol Climbers.</p>
+    </div>
+    <div class="switch" role="group" aria-label="Telegram theme">
+      <button id="tg-light" type="button" aria-pressed="true">Telegram light</button>
+      <button id="tg-dark" type="button" aria-pressed="false">Telegram dark</button>
+    </div>
+  </header>
+
+  <div class="phones" id="phones">
+
+    <!-- 1. Groups -->
+    <figure>
+      <figcaption><b>1 · Groups</b>Every group where you can review join requests. A subtitle says whether its form is live; an inactive group says why.</figcaption>
+      <div class="phone">
+        <div class="tgbar"><span class="l">Close</span><span class="t">Join Gate</span><span class="r">•••</span></div>
+        <div class="body">
+          <div class="cap">Your groups</div>
+          <div class="sec">
+            <div class="row"><span class="av" style="background:var(--av3)">LC</span><div class="rt"><div class="txt"><div class="ttl">Limassol Climbers</div><div class="sub">Form live · 3 pending</div></div><svg class="chev"><use href="#chev"/></svg></div></div>
+            <div class="row"><span class="av" style="background:var(--av2)">NB</span><div class="rt"><div class="txt"><div class="ttl">Nicosia Book Club</div><div class="sub">No form yet. Join requests wait.</div></div><svg class="chev"><use href="#chev"/></svg></div></div>
+            <div class="row"><span class="av" style="background:var(--av5)">PS</span><div class="rt"><div class="txt"><div class="ttl">Paphos Sailing</div><div class="sub">Inactive: the bot can't invite users</div></div><svg class="chev"><use href="#chev"/></svg></div></div>
+          </div>
+          <div class="foot">Missing a group? Add the bot to it as an admin with the Invite users right.</div>
+        </div>
+      </div>
+    </figure>
+
+    <!-- 2. Form editor -->
+    <figure>
+      <figcaption><b>2 · Form</b>Telegram's Back button returns to Groups. The welcome message, then one section per question, with reorder and delete as icons. Save is Telegram's bottom button.</figcaption>
+      <div class="phone">
+        <div class="tgbar"><span class="l"><svg><use href="#back"/></svg>Back</span><span class="t">Limassol Climbers</span><span class="r">•••</span></div>
+        <div class="body">
+          <div class="seg"><span class="on">Form</span><span>Submissions</span><span>Settings</span></div>
+          <div class="cap">Welcome message</div>
+          <div class="sec"><div class="input" style="box-shadow:none">Hi! A few questions before you join</div></div>
+          <div class="cap">Question 1</div>
+          <div class="sec">
+            <div class="qhead"><span class="kind"><svg width="15" height="15"><use href="#list"/></svg>Choice</span>
+              <span class="iconbtn off" aria-label="Move up"><svg><use href="#up"/></svg></span>
+              <span class="iconbtn" aria-label="Move down"><svg><use href="#down"/></svg></span>
+              <span class="iconbtn danger" aria-label="Delete"><svg><use href="#trash"/></svg></span></div>
+            <div class="input">Where do you live?</div>
+            <div class="opt"><i class="dot"></i><span>Limassol</span><span class="iconbtn" aria-label="Remove option" style="color:var(--tg-hint)"><svg width="16" height="16"><use href="#trash"/></svg></span></div>
+            <div class="opt"><i class="dot"></i><span>Nicosia</span><span class="iconbtn" aria-label="Remove option" style="color:var(--tg-hint)"><svg width="16" height="16"><use href="#trash"/></svg></span></div>
+            <div class="opt link"><svg width="18" height="18"><use href="#plus"/></svg><span>Add option</span></div>
+            <div class="opt"><span>Offer "Other"</span><i class="sw on"></i></div>
+            <div class="opt"><span>Required</span><i class="sw on"></i></div>
+          </div>
+          <div class="cap">Question 2</div>
+          <div class="sec">
+            <div class="qhead"><span class="kind"><svg width="15" height="15"><use href="#yesno"/></svg>Yes / No</span>
+              <span class="iconbtn" aria-label="Move up"><svg><use href="#up"/></svg></span>
+              <span class="iconbtn" aria-label="Move down"><svg><use href="#down"/></svg></span>
+              <span class="iconbtn danger" aria-label="Delete"><svg><use href="#trash"/></svg></span></div>
+            <div class="input">Agree to the rules?</div>
+            <div class="opt"><span>Required</span><i class="sw on"></i></div>
+          </div>
+        </div>
+        <div class="mainbtn"><div>Save form</div></div>
+      </div>
+    </figure>
+
+    <!-- 3. Add field sheet -->
+    <figure>
+      <figcaption><b>3 · Add field</b>The last row of the form, "Add field", opens a sheet listing the seven kinds, each with what the applicant will see.</figcaption>
+      <div class="phone">
+        <div class="tgbar"><span class="l"><svg><use href="#back"/></svg>Back</span><span class="t">Limassol Climbers</span><span class="r">•••</span></div>
+        <div class="body">
+          <div class="seg"><span class="on">Form</span><span>Submissions</span><span>Settings</span></div>
+          <div class="cap">Question 7 · Consent</div>
+          <div class="sec"><div class="input" style="box-shadow:none">Privacy terms… Do you agree?</div></div>
+          <div class="foot">Consent is always required, so it has no Required switch.</div>
+          <div class="sec" style="margin-top:12px"><div class="row link"><svg width="20" height="20"><use href="#plus"/></svg><div class="rt">Add field</div></div></div>
+        </div>
+        <div class="dim"></div>
+        <div class="sheet">
+          <i class="grab"></i>
+          <h3>Add field</h3>
+          <div class="sec">
+            <div class="row"><span class="ico" style="background:var(--av3)"><svg><use href="#list"/></svg></span><div class="rt"><div class="txt"><div class="ttl">Choice</div><div class="sub">One option, as buttons</div></div></div></div>
+            <div class="row"><span class="ico" style="background:var(--av2)"><svg><use href="#yesno"/></svg></span><div class="rt"><div class="txt"><div class="ttl">Yes / No</div><div class="sub">Two buttons</div></div></div></div>
+            <div class="row"><span class="ico" style="background:var(--av5)"><svg><use href="#multi"/></svg></span><div class="rt"><div class="txt"><div class="ttl">Multiple choice</div><div class="sub">Several options, then Done</div></div></div></div>
+            <div class="row"><span class="ico" style="background:var(--av4)"><svg><use href="#text"/></svg></span><div class="rt"><div class="txt"><div class="ttl">Text</div><div class="sub">A typed answer, with a length limit</div></div></div></div>
+            <div class="row"><span class="ico" style="background:var(--av1)"><svg><use href="#num"/></svg></span><div class="rt"><div class="txt"><div class="ttl">Number</div><div class="sub">A whole number, with a range</div></div></div></div>
+            <div class="row"><span class="ico" style="background:var(--av3)"><svg><use href="#link"/></svg></span><div class="rt"><div class="txt"><div class="ttl">Link</div><div class="sub">Starting with http:// or https://</div></div></div></div>
+            <div class="row"><span class="ico" style="background:var(--ok)"><svg><use href="#shield"/></svg></span><div class="rt"><div class="txt"><div class="ttl">Consent</div><div class="sub">I disagree declines the request</div></div></div></div>
+          </div>
+        </div>
+      </div>
+    </figure>
+
+    <!-- 4. Question with preview + inline error, saved state -->
+    <figure>
+      <figcaption><b>4 · Preview, errors, saved</b>Each question shows how it will look in the applicant's chat. A problem is marked on the field itself. After saving, the bottom button turns green for a moment, with a haptic tick.</figcaption>
+      <div class="phone">
+        <div class="tgbar"><span class="l"><svg><use href="#back"/></svg>Back</span><span class="t">Limassol Climbers</span><span class="r">•••</span></div>
+        <div class="body">
+          <div class="cap">Question 3</div>
+          <div class="sec">
+            <div class="qhead"><span class="kind"><svg width="15" height="15"><use href="#multi"/></svg>Multiple choice</span>
+              <span class="iconbtn" aria-label="Move up"><svg><use href="#up"/></svg></span>
+              <span class="iconbtn" aria-label="Move down"><svg><use href="#down"/></svg></span>
+              <span class="iconbtn danger" aria-label="Delete"><svg><use href="#trash"/></svg></span></div>
+            <div class="input">Interests?</div>
+            <div class="opt"><i class="dot sq"></i><span>Bouldering</span></div>
+            <div class="opt"><i class="dot sq"></i><span>Lead</span></div>
+            <div class="opt"><i class="dot sq"></i><span>Outdoor trips</span></div>
+            <div class="opt"><span>At least</span><span class="stepper"><b aria-label="Fewer" class="off">−</b><i>1</i><b aria-label="More">+</b></span></div>
+            <div class="opt"><span>At most</span><span class="stepper"><b aria-label="Fewer">−</b><i>3</i><b aria-label="More" class="off">+</b></span></div>
+            <div class="opt"><span>Required</span><i class="sw on"></i></div>
+          </div>
+          <div class="cap">How it looks in chat</div>
+          <div class="chat">
+            <div class="bubble">Interests?</div>
+            <div class="kb"><span>Bouldering</span><span>Lead</span><span>Outdoor trips</span><span>Done</span></div>
+          </div>
+          <div class="cap">Question 4</div>
+          <div class="sec">
+            <div class="qhead"><span class="kind"><svg width="15" height="15"><use href="#text"/></svg>Text</span>
+              <span class="iconbtn" aria-label="Move up"><svg><use href="#up"/></svg></span>
+              <span class="iconbtn" aria-label="Move down"><svg><use href="#down"/></svg></span>
+              <span class="iconbtn danger" aria-label="Delete"><svg><use href="#trash"/></svg></span></div>
+            <div class="input err"><span class="ph">Question</span></div>
+          </div>
+          <div class="errtxt">Write the question the applicant will see.</div>
+        </div>
+        <div class="mainbtn"><div class="done"><svg><use href="#check"/></svg>Saved</div></div>
+      </div>
+    </figure>
+
+    <!-- 4b. Min / max -->
+    <figure>
+      <figcaption><b>4b · Min and max</b>Choice counts use a stepper: tap − or +, limited to the number of options. A number range uses two fields with the number keyboard; empty means no limit. Text length is one field.</figcaption>
+      <div class="phone">
+        <div class="tgbar"><span class="l"><svg><use href="#back"/></svg>Back</span><span class="t">Limassol Climbers</span><span class="r">•••</span></div>
+        <div class="body">
+          <div class="cap">Question 3 · Multiple choice</div>
+          <div class="sec">
+            <div class="input" style="box-shadow:none">Interests?</div>
+            <div class="opt"><span>At least</span><span class="stepper"><b aria-label="Fewer" class="off">−</b><i>1</i><b aria-label="More">+</b></span></div>
+            <div class="opt"><span>At most</span><span class="stepper"><b aria-label="Fewer">−</b><i>3</i><b aria-label="More" class="off">+</b></span></div>
+          </div>
+          <div class="foot">Applicants pick 1 to 3 of the 3 options.</div>
+
+          <div class="cap">Question 5 · Number</div>
+          <div class="sec">
+            <div class="input" style="box-shadow:none">Age?</div>
+            <div class="opt"><span>Smallest</span><span class="numfield">18</span></div>
+            <div class="opt"><span>Largest</span><span class="numfield">120</span></div>
+          </div>
+          <div class="foot">Leave a field empty for no limit.</div>
+
+          <div class="cap">Question 4 · Text</div>
+          <div class="sec">
+            <div class="input" style="box-shadow:none">About you</div>
+            <div class="opt"><span>Longest answer</span><span class="numfield">300</span><span class="val" style="padding-right:8px">chars</span></div>
+          </div>
+
+          <div class="cap">Typing a range backwards</div>
+          <div class="sec">
+            <div class="opt"><span>Smallest</span><span class="numfield bad">65</span></div>
+            <div class="opt"><span>Largest</span><span class="numfield bad">18</span></div>
+          </div>
+          <div class="errtxt">Smallest can't be larger than largest.</div>
+        </div>
+        <div class="mainbtn"><div>Save form</div></div>
+      </div>
+    </figure>
+
+    <!-- 4c. Switches -->
+    <figure>
+      <figcaption><b>4c · Switches, off and on</b>Every yes/no setting is a Telegram switch: grey knob on the left when off, filled with the button colour when on. The whole row toggles it, with a light haptic tick.</figcaption>
+      <div class="phone">
+        <div class="tgbar"><span class="l"><svg><use href="#back"/></svg>Back</span><span class="t">Limassol Climbers</span><span class="r">•••</span></div>
+        <div class="body">
+          <div class="cap">Question 1 · Choice</div>
+          <div class="sec">
+            <div class="input" style="box-shadow:none">Where do you live?</div>
+            <div class="opt"><span>Offer "Other"</span><i class="sw"></i></div>
+            <div class="opt"><span>Required</span><i class="sw on"></i></div>
+          </div>
+          <div class="foot">Off: applicants pick from your options only. On: an Other button lets them type their own answer.</div>
+
+          <div class="cap">Question 6 · Link</div>
+          <div class="sec">
+            <div class="input" style="box-shadow:none">LinkedIn?</div>
+            <div class="opt"><span>Required</span><i class="sw"></i></div>
+          </div>
+          <div class="foot">Not required, so the applicant gets a Skip button.</div>
+
+          <div class="cap">How the applicant sees a half-answered multiple choice</div>
+          <div class="chat">
+            <div class="bubble">Interests?</div>
+            <div class="kb"><span>✓ Bouldering</span><span>Lead</span><span>✓ Outdoor trips</span><span>Done</span></div>
+          </div>
+          <div class="foot">Picked options get a ✓; that's the bot's chat message, not the mini app.</div>
+        </div>
+        <div class="mainbtn"><div>Save form</div></div>
+      </div>
+    </figure>
+
+    <!-- 5. Submissions -->
+    <figure>
+      <figcaption><b>5 · Submissions</b>Status filter as chips, then applicants as chat-style rows with a coloured status. Export CSV is the bottom button; the file arrives in your DM.</figcaption>
+      <div class="phone">
+        <div class="tgbar"><span class="l"><svg><use href="#back"/></svg>Back</span><span class="t">Limassol Climbers</span><span class="r">•••</span></div>
+        <div class="body">
+          <div class="seg"><span>Form</span><span class="on">Submissions</span><span>Settings</span></div>
+          <div class="chips"><span class="on">All</span><span>Pending 3</span><span>Approved</span><span>Rejected</span><span>Expired</span></div>
+          <div class="sec">
+            <div class="row"><span class="av" style="background:var(--av1)">AK</span><div class="rt"><div class="txt"><div class="ttl">Anna Kova <span class="val">@annak</span></div><div class="sub">Today, 10:42</div></div><span class="pill pending">Pending</span></div></div>
+            <div class="row"><span class="av" style="background:var(--av4)">MP</span><div class="rt"><div class="txt"><div class="ttl">Marios Petrou</div><div class="sub">Today, 09:15</div></div><span class="pill pending">Pending</span></div></div>
+            <div class="row"><span class="av" style="background:var(--av2)">SL</span><div class="rt"><div class="txt"><div class="ttl">Sofia Lambrou <span class="val">@sofl</span></div><div class="sub">Yesterday · could not be reached</div></div><span class="pill pending">Pending</span></div></div>
+            <div class="row"><span class="av" style="background:var(--av3)">DT</span><div class="rt"><div class="txt"><div class="ttl">Dmitri T. <span class="val">@dmt</span></div><div class="sub">2 Oct · by Boss</div></div><span class="pill ok">Approved</span></div></div>
+            <div class="row"><span class="av" style="background:var(--av5)">EH</span><div class="rt"><div class="txt"><div class="ttl">Elena H.</div><div class="sub">1 Oct · by Boss</div></div><span class="pill bad">Rejected</span></div></div>
+            <div class="row"><span class="av" style="background:var(--av1)">GN</span><div class="rt"><div class="txt"><div class="ttl">George N.</div><div class="sub">24 Sep · form timed out</div></div><span class="pill muted">Expired</span></div></div>
+          </div>
+        </div>
+        <div class="mainbtn"><div>Export CSV to my DM</div></div>
+      </div>
+    </figure>
+
+    <!-- 6. Submission detail -->
+    <figure>
+      <figcaption><b>6 · One submission</b>A profile header like Telegram's, then each question with the answer under it. Delete is a red row and asks with Telegram's native confirm.</figcaption>
+      <div class="phone">
+        <div class="tgbar"><span class="l"><svg><use href="#back"/></svg>Back</span><span class="t">Submission</span><span class="r">•••</span></div>
+        <div class="body">
+          <div class="profile"><span class="av" style="background:var(--av1)">AK</span><b>Anna Kova</b><span class="sub">@annak · Today, 10:42</span><span class="pill pending">Pending</span></div>
+          <div class="sec qa">
+            <div class="row"><div class="rt"><span class="q">Where do you live?</span><span>Limassol</span></div></div>
+            <div class="row"><div class="rt"><span class="q">Agree to the rules?</span><span>Yes</span></div></div>
+            <div class="row"><div class="rt"><span class="q">Interests?</span><span>Bouldering, Outdoor trips</span></div></div>
+            <div class="row"><div class="rt"><span class="q">About you</span><span>Climbing for two years, mostly at the Limassol wall. Looking for weekend partners.</span></div></div>
+            <div class="row"><div class="rt"><span class="q">Age?</span><span>29</span></div></div>
+            <div class="row"><div class="rt"><span class="q">LinkedIn?</span><span class="val">Skipped</span></div></div>
+          </div>
+          <div class="foot">Approve or reject from the bot's message in your DM.</div>
+          <div class="sec" style="margin-top:8px"><div class="row danger"><div class="rt">Delete submission</div></div></div>
+        </div>
+      </div>
+    </figure>
+
+    <!-- 7. Settings -->
+    <figure>
+      <figcaption><b>7 · Settings</b>One row per setting, the value on the right. The footnote says what the number means.</figcaption>
+      <div class="phone">
+        <div class="tgbar"><span class="l"><svg><use href="#back"/></svg>Back</span><span class="t">Limassol Climbers</span><span class="r">•••</span></div>
+        <div class="body">
+          <div class="seg"><span>Form</span><span>Submissions</span><span class="on">Settings</span></div>
+          <div class="cap">Retention</div>
+          <div class="sec">
+            <div class="row"><span class="ico" style="background:var(--av4)"><svg><use href="#clock"/></svg></span><div class="rt"><span class="txt">Keep submissions for</span><span class="val" style="color:var(--tg-text)">90 days</span></div></div>
+          </div>
+          <div class="foot">From 1 to 3650 days. Older answers are erased every night; pending ones are kept while the group is active.</div>
+        </div>
+        <div class="mainbtn"><div>Save</div></div>
+      </div>
+    </figure>
+
+  </div>
+</div>
+
+<script>
+(function(){
+  var phones=document.getElementById('phones'), l=document.getElementById('tg-light'), d=document.getElementById('tg-dark');
+  function set(dark){ phones.classList.toggle('tg-dark',dark); l.setAttribute('aria-pressed',String(!dark)); d.setAttribute('aria-pressed',String(dark));
+    try{localStorage.setItem('tg-theme',dark?'dark':'light')}catch(e){} }
+  l.addEventListener('click',function(){set(false)}); d.addEventListener('click',function(){set(true)});
+  try{ if(localStorage.getItem('tg-theme')==='dark') set(true) }catch(e){}
+})();
+</script>
