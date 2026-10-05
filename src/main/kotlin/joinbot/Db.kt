@@ -31,8 +31,8 @@ fun createDataSource(cfg: Config): HikariDataSource {
 }
 
 /** H2 support ships inside flyway-core; no database module is needed. */
-fun migrate(ds: DataSource) {
-    Flyway.configure().dataSource(ds).locations("classpath:db/migration").load().migrate()
+fun migrate(ds: DataSource, target: String = "latest") {
+    Flyway.configure().dataSource(ds).locations("classpath:db/migration").target(target).load().migrate()
 }
 
 private val connections = ConcurrentHashMap<DataSource, Database>()

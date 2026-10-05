@@ -68,8 +68,8 @@ class ApplicantFlow(
         val buttonOnly = field == null || field is Multi || field is Consent || (field is Radio && !s.state.otherMode)
         if (text == null || buttonOnly) return@locked reask(s, form, Reason.WRONG_KIND)
         when (val c = validate(field, Input.Typed(text))) {
-            is Check.Ok -> advance(s, form, c.value)
-            is Check.Invalid -> reask(s, form, c.reason)
+            is Checked.Ok -> advance(s, form, c.value)
+            is Checked.Invalid -> reask(s, form, c.reason)
         }
         true
     }
@@ -131,11 +131,11 @@ class ApplicantFlow(
             else -> return stale()
         }
         when (val c = validate(field, input)) {
-            is Check.Ok -> {
+            is Checked.Ok -> {
                 bot.answerCallback(callbackId); bot.editText(userId, messageId, field.prompt); advance(s, form, c.value)
             }
             // a skip on a required field or an unknown option only comes from a forged button
-            is Check.Invalid -> if (field is Multi && (c.reason == Reason.TOO_FEW || c.reason == Reason.TOO_MANY)) {
+            is Checked.Invalid -> if (field is Multi && (c.reason == Reason.TOO_FEW || c.reason == Reason.TOO_MANY)) {
                 val limit = if (c.reason == Reason.TOO_FEW) field.minPicks else field.maxPicks
                 bot.answerCallback(callbackId, Texts.t(s.lang, c.reason.text(), limit), alert = true)
             } else stale()

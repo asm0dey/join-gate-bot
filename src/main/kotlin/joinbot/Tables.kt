@@ -69,6 +69,7 @@ object FormSessions : Table("form_session") {
     val lang = text("lang").nullable()
     val startedAt = timestamp("started_at")
     val touchedAt = timestamp("touched_at")
+    val kind = text("kind").default("JOIN")
     override val primaryKey = PrimaryKey(userId, chatId)
 }
 
@@ -83,6 +84,7 @@ object Submissions : Table("submission") {
     val decidedBy = long("decided_by").nullable()
     val decidedAt = timestamp("decided_at").nullable()
     val createdAt = timestamp("created_at")
+    val kind = text("kind").default("JOIN")
     override val primaryKey = PrimaryKey(id)
 }
 
@@ -98,6 +100,35 @@ object BotUsers : Table("bot_user") {
     val dmOk = bool("dm_ok")
     val lang = text("lang").nullable()
     override val primaryKey = PrimaryKey(userId)
+}
+
+object Members : Table("member") {
+    val chatId = long("chat_id")
+    val userId = long("user_id")
+    val passedAt = timestamp("passed_at").nullable()
+    override val primaryKey = PrimaryKey(chatId, userId)
+}
+
+object Rechecks : Table("recheck") {
+    val chatId = long("chat_id")
+    val deadline = timestamp("deadline")
+    val startedBy = long("started_by")
+    val startedAt = timestamp("started_at")
+    val closedAt = timestamp("closed_at").nullable()
+    override val primaryKey = PrimaryKey(chatId)
+}
+
+object RecheckMessages : Table("recheck_message") {
+    val chatId = long("chat_id")
+    val messageId = long("message_id")
+    override val primaryKey = PrimaryKey(chatId, messageId)
+}
+
+object RecheckNotices : Table("recheck_notice") {
+    val chatId = long("chat_id")
+    val adminId = long("admin_id")
+    val delivered = bool("delivered")
+    override val primaryKey = PrimaryKey(chatId, adminId)
 }
 
 object Canary : Table("canary") {

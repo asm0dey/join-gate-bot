@@ -25,35 +25,35 @@ class FormSchemaTest : StringSpec({
     val link = Link("a6", "LinkedIn?", required = false)
     val consent = Consent("c", "Agree?")
     "validate" { listOf(
-        Pair(radio, Input.Picked(1) to Check.Ok("Nicosia")),
-        Pair(radio, Input.Picked(2) to Check.Invalid(Reason.BAD_OPTION)),
-        Pair(radio, Input.Typed("Paphos") to Check.Ok("Paphos")),            // other=true accepts text
-        Pair(radio.copy(other = false), Input.Typed("Paphos") to Check.Invalid(Reason.WRONG_KIND)),
-        Pair(multi, Input.PickedMany(setOf(0, 2)) to Check.Ok("x, z")),
-        Pair(multi, Input.PickedMany(emptySet()) to Check.Invalid(Reason.TOO_FEW)),
-        Pair(multi, Input.PickedMany(setOf(0, 1, 2)) to Check.Invalid(Reason.TOO_MANY)),
-        Pair(multi, Input.PickedMany(setOf(3)) to Check.Invalid(Reason.BAD_OPTION)),
-        Pair(text, Input.Typed("  abc  ") to Check.Ok("abc")),
-        Pair(text, Input.Typed("abcdef") to Check.Invalid(Reason.TOO_LONG)),
-        Pair(text, Input.Typed("   ") to Check.Invalid(Reason.REQUIRED)),
-        Pair(text, Input.Skip to Check.Invalid(Reason.REQUIRED)),
-        Pair(num, Input.Typed("42") to Check.Ok("42")),
-        Pair(num, Input.Typed("17") to Check.Invalid(Reason.TOO_SMALL)),
-        Pair(num, Input.Typed("121") to Check.Invalid(Reason.TOO_LARGE)),
-        Pair(num, Input.Typed("99999999999999999999") to Check.Invalid(Reason.NOT_A_NUMBER)),
-        Pair(num, Input.Typed("4.2") to Check.Invalid(Reason.NOT_A_NUMBER)),
-        Pair(link, Input.Typed("https://x.io/p") to Check.Ok("https://x.io/p")),
-        Pair(link, Input.Typed("x.io") to Check.Invalid(Reason.NOT_A_LINK)),
-        Pair(link, Input.Typed("javascript:alert(1)") to Check.Invalid(Reason.NOT_A_LINK)),
-        Pair(link, Input.Typed("ftp://x.io") to Check.Invalid(Reason.NOT_A_LINK)),
-        Pair(link, Input.Skip to Check.Ok("")),
-        Pair(link, Input.Typed("https://пример.рф/x") to Check.Ok("https://пример.рф/x")),
-        Pair(link, Input.Typed("https://x.io/путь") to Check.Ok("https://x.io/путь")),
-        Pair(link, Input.Typed("https:///nohost") to Check.Invalid(Reason.NOT_A_LINK)),
-        Pair(consent, Input.Picked(0) to Check.Ok("✓")),
-        Pair(consent, Input.Typed("yes") to Check.Invalid(Reason.WRONG_KIND)),
+        Pair(radio, Input.Picked(1) to Checked.Ok("Nicosia")),
+        Pair(radio, Input.Picked(2) to Checked.Invalid(Reason.BAD_OPTION)),
+        Pair(radio, Input.Typed("Paphos") to Checked.Ok("Paphos")),            // other=true accepts text
+        Pair(radio.copy(other = false), Input.Typed("Paphos") to Checked.Invalid(Reason.WRONG_KIND)),
+        Pair(multi, Input.PickedMany(setOf(0, 2)) to Checked.Ok("x, z")),
+        Pair(multi, Input.PickedMany(emptySet()) to Checked.Invalid(Reason.TOO_FEW)),
+        Pair(multi, Input.PickedMany(setOf(0, 1, 2)) to Checked.Invalid(Reason.TOO_MANY)),
+        Pair(multi, Input.PickedMany(setOf(3)) to Checked.Invalid(Reason.BAD_OPTION)),
+        Pair(text, Input.Typed("  abc  ") to Checked.Ok("abc")),
+        Pair(text, Input.Typed("abcdef") to Checked.Invalid(Reason.TOO_LONG)),
+        Pair(text, Input.Typed("   ") to Checked.Invalid(Reason.REQUIRED)),
+        Pair(text, Input.Skip to Checked.Invalid(Reason.REQUIRED)),
+        Pair(num, Input.Typed("42") to Checked.Ok("42")),
+        Pair(num, Input.Typed("17") to Checked.Invalid(Reason.TOO_SMALL)),
+        Pair(num, Input.Typed("121") to Checked.Invalid(Reason.TOO_LARGE)),
+        Pair(num, Input.Typed("99999999999999999999") to Checked.Invalid(Reason.NOT_A_NUMBER)),
+        Pair(num, Input.Typed("4.2") to Checked.Invalid(Reason.NOT_A_NUMBER)),
+        Pair(link, Input.Typed("https://x.io/p") to Checked.Ok("https://x.io/p")),
+        Pair(link, Input.Typed("x.io") to Checked.Invalid(Reason.NOT_A_LINK)),
+        Pair(link, Input.Typed("javascript:alert(1)") to Checked.Invalid(Reason.NOT_A_LINK)),
+        Pair(link, Input.Typed("ftp://x.io") to Checked.Invalid(Reason.NOT_A_LINK)),
+        Pair(link, Input.Skip to Checked.Ok("")),
+        Pair(link, Input.Typed("https://пример.рф/x") to Checked.Ok("https://пример.рф/x")),
+        Pair(link, Input.Typed("https://x.io/путь") to Checked.Ok("https://x.io/путь")),
+        Pair(link, Input.Typed("https:///nohost") to Checked.Invalid(Reason.NOT_A_LINK)),
+        Pair(consent, Input.Picked(0) to Checked.Ok("✓")),
+        Pair(consent, Input.Typed("yes") to Checked.Invalid(Reason.WRONG_KIND)),
     ).forEach { (f, ir) -> validate(f, ir.first) shouldBe ir.second } }
-    "multi min defaults to 1 when required" { validate(Multi("m", "?", listOf("a")), Input.PickedMany(emptySet())) shouldBe Check.Invalid(Reason.TOO_FEW) }
+    "multi min defaults to 1 when required" { validate(Multi("m", "?", listOf("a")), Input.PickedMany(emptySet())) shouldBe Checked.Invalid(Reason.TOO_FEW) }
     "spec example parses and round-trips" { val f = FormJson.decodeFromString<Form>(SPEC_EXAMPLE_JSON)
         f.fields.map { it::class } shouldBe listOf(Radio::class, Radio::class, Multi::class, Text::class, IntField::class, Link::class, Consent::class)
         FormJson.decodeFromString<Form>(FormJson.encodeToString(f)) shouldBe f }

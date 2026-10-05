@@ -7,7 +7,7 @@ import java.time.Instant
 
 private val at = Instant.parse("2026-01-01T00:00:00Z")
 private fun sub(id: Long, answers: Map<String, String>, name: String = "Ann") =
-    Submission(id, -1, 5, 1, Profile(name, null), answers, Status.PENDING, null, null, at)
+    Submission(id, -1, 5, 1, Profile(name, null), answers, Status.PENDING, null, null, at, Kind.JOIN)
 
 class CsvTest : StringSpec({
     "union of field ids labelled with latest prompt" {
