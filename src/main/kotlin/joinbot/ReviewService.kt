@@ -18,9 +18,13 @@ class ReviewService(
     private val subs: SubmissionRepo, private val forms: FormRepo, private val groups: GroupRepo, private val users: BotUserRepo, private val members: MemberRepo,
     private val admins: AdminCheck, private val bot: TelegramBot, private val clock: Clock,
 ) {
-    /** Tells deciders about a saved update. Filled in by the review task. */
-    @Suppress("UNUSED_PARAMETER")
-    suspend fun notifyUpdate(submissionId: Long) {}
+    /** Tells the Join deciders about a saved update: a copy without buttons, not recorded as a review message. */
+    suspend fun notifyUpdate(submissionId: Long) {
+        val s = subs.get(submissionId) ?: return
+        if (groups.get(s.chatId)?.active != true) return
+        val form = s.formVersion?.let { forms.version(s.chatId, it) }
+        for (adminId in admins.deciders(s.chatId)) sendCopy(s, form, adminId)
+    }
 
     suspend fun submit(submissionId: Long) {
         val s = subs.get(submissionId) ?: return
@@ -28,7 +32,7 @@ class ReviewService(
         val form = s.formVersion?.let { forms.version(s.chatId, it) }
         var reached = 0
         // no dm_ok pre-check: an admin who joined through the form wrote to the bot but never sent /start; a 403 tells instead
-        for (adminId in admins.deciders(s.chatId)) {
+        for (adminId in if (s.kind == Kind.CHECK) admins.checkDeciders(s.chatId) else admins.deciders(s.chatId)) {
             if (sendCopy(s, form, adminId)) reached++
         }
         if (reached > 0) return
@@ -47,15 +51,29 @@ class ReviewService(
         val s = parts.getOrNull(1)?.toLongOrNull()?.let(subs::get)
         if (parts.size != 3 || parts[0] != "r" || status == null || s == null) return alert(T.STALE_BUTTON)
         if (groups.get(s.chatId)?.active != true) return alert(T.REVIEW_SUSPENDED)
-        if (!admins.canDecide(s.chatId, adminId, fresh = true)) return alert(T.NOT_ADMIN_ANYMORE)
+        val check = s.kind == Kind.CHECK
+        val allowed = if (check) admins.canDecideCheck(s.chatId, adminId, fresh = true) else admins.canDecide(s.chatId, adminId, fresh = true)
+        if (!allowed) return alert(T.NOT_ADMIN_ANYMORE)
 
         // The conditional UPDATE is the only arbiter between simultaneous clicks.
         suspend fun alreadyDecided() = alert(T.ALREADY_DECIDED, deciderName(s.chatId, subs.get(s.id)?.decidedBy, lang))
         if (!subs.decide(s.id, status, adminId, clock.instant())) return alreadyDecided()
-        val result = if (status == Status.APPROVED) bot.approveJoin(s.chatId, s.userId) else bot.declineJoin(s.chatId, s.userId)
+        var revertAlert = T.TRY_AGAIN
+        val result = when {
+            // approving a check needs no Telegram call: the member is already in
+            check && status == Status.APPROVED -> Decision.OK
+            check -> when (bot.removeMember(s.chatId, s.userId)) {
+                Kick.OK -> Decision.OK
+                Kick.GONE -> Decision.GONE
+                Kick.NO_RIGHT -> { revertAlert = T.NO_BAN_RIGHT; Decision.TRANSIENT }
+                Kick.TRANSIENT -> Decision.TRANSIENT
+            }
+            status == Status.APPROVED -> bot.approveJoin(s.chatId, s.userId)
+            else -> bot.declineJoin(s.chatId, s.userId)
+        }
         val final = when (result) {
             Decision.OK -> status
-            Decision.TRANSIENT -> { subs.revert(s.id, status, adminId); return alert(T.TRY_AGAIN) }
+            Decision.TRANSIENT -> { subs.revert(s.id, status, adminId); return alert(revertAlert) }
             // one conditional step: a revert first would let another click win in between
             Decision.GONE -> {
                 if (!subs.transition(s.id, status, adminId, Status.WITHDRAWN)) return alreadyDecided()
@@ -63,6 +81,7 @@ class ReviewService(
             }
         }
         if (final == Status.APPROVED) members.pass(s.chatId, s.userId, clock.instant())
+        if (check && final == Status.REJECTED) members.remove(s.chatId, s.userId)
         bot.answerCallback(callbackId)
 
         val form = s.formVersion?.let { forms.version(s.chatId, it) }
@@ -70,23 +89,29 @@ class ReviewService(
             val l = users.lang(copyAdmin)
             val outcome = when (final) {
                 Status.APPROVED -> Texts.t(l, T.DECIDED_BY_APPROVED, deciderName(s.chatId, adminId, l))
-                Status.REJECTED -> Texts.t(l, T.DECIDED_BY_REJECTED, deciderName(s.chatId, adminId, l))
+                Status.REJECTED -> Texts.t(l, if (check) T.DECIDED_BY_REMOVED else T.DECIDED_BY_REJECTED, deciderName(s.chatId, adminId, l))
                 else -> Texts.t(l, T.WITHDRAWN)
             }
             bot.editText(copyAdmin, messageId, fit(renderReview(s, form, l), "\n\n$outcome"))
         }
         if (final == Status.WITHDRAWN) return
         val userLang = users.lang(s.userId)
-        val sent = bot.sendText(s.userId, Texts.t(userLang, if (final == Status.APPROVED) T.APPROVED_USER else T.REJECTED_USER))
+        val approved = final == Status.APPROVED
+        val userText = if (check) {
+            Texts.t(userLang, if (approved) T.CHECK_APPROVED_USER else T.CHECK_REMOVED_USER, groups.get(s.chatId)?.title.orEmpty())
+        } else Texts.t(userLang, if (approved) T.APPROVED_USER else T.REJECTED_USER)
+        val sent = bot.sendText(s.userId, userText)
         if (sent == Sent.Forbidden) users.forbidden(s.userId)
     }
 
     /** On /start: every PENDING submission in an active group [adminId] can decide, minus copies they already have. Returns how many were sent. */
     suspend fun deliverPending(adminId: Long): Int {
         // ponytail: one cached admin lookup per active group; track chat_member updates if groups grow into the hundreds
-        val chats = groups.active().map { it.chatId }.filter { admins.canDecide(it, adminId) }
+        val join = groups.active().map { it.chatId }.filter { admins.canDecide(it, adminId) }.toSet()
+        val check = groups.active().map { it.chatId }.filter { admins.canDecideCheck(it, adminId) }.toSet()
         var sent = 0
-        for (s in subs.pendingInChats(chats)) {
+        for (s in subs.pendingInChats((join + check).toList())) {
+            if (s.chatId !in (if (s.kind == Kind.CHECK) check else join)) continue
             if (subs.reviewMessages(s.id).any { it.first == adminId }) continue
             if (sendCopy(s, s.formVersion?.let { forms.version(s.chatId, it) }, adminId)) sent++
             else if (!users.dmOk(adminId)) break // a 403 means the rest would fail too
@@ -109,7 +134,8 @@ class ReviewService(
     suspend fun resumeChat(chatId: Long) = subs.list(chatId, Status.PENDING).forEach { submit(it.id) }
 
     fun renderReview(s: Submission, form: Form?, lang: String?): String = buildString {
-        append(Texts.t(lang, T.REVIEW_HEADER, s.profile.name, groups.get(s.chatId)?.title.orEmpty()))
+        val header = when (s.kind) { Kind.JOIN -> T.REVIEW_HEADER; Kind.CHECK -> T.CHECK_HEADER; Kind.UPDATE -> T.UPDATE_HEADER }
+        append(Texts.t(lang, header, s.profile.name, groups.get(s.chatId)?.title.orEmpty()))
         s.profile.username?.let { append("\n@").append(it) }
         append("\n\n")
         val partial = s.partial(form)
@@ -125,9 +151,12 @@ class ReviewService(
     /** False when the admin could not be reached. */
     private suspend fun sendCopy(s: Submission, form: Form?, adminId: Long): Boolean {
         val lang = users.lang(adminId)
-        val buttons = listOf(listOf(Button(Texts.t(lang, T.APPROVE), "r|${s.id}|a"), Button(Texts.t(lang, T.REJECT), "r|${s.id}|j")))
+        val no = if (s.kind == Kind.CHECK) T.REMOVE else T.REJECT
+        // an update is informational: no buttons, and no review message to edit later
+        val buttons = if (s.kind == Kind.UPDATE) emptyList()
+        else listOf(listOf(Button(Texts.t(lang, T.APPROVE), "r|${s.id}|a"), Button(Texts.t(lang, no), "r|${s.id}|j")))
         return when (val r = bot.sendText(adminId, fit(renderReview(s, form, lang)), buttons)) {
-            is Sent.Ok -> { subs.addReviewMessage(s.id, adminId, r.messageId); true }
+            is Sent.Ok -> { if (s.kind != Kind.UPDATE) subs.addReviewMessage(s.id, adminId, r.messageId); true }
             Sent.Forbidden -> { users.forbidden(adminId); false }
             Sent.Failed -> false
         }

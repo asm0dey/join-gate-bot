@@ -15,7 +15,7 @@ private const val CHAT = -100L
 private const val APPLICANT = 5L
 private val ann = Profile("Ann", "ann")
 private val form = Form("hi", listOf(Text("q1", "Why join?"), Text("q2", "Where from?")))
-private fun admin(id: Long, name: String = "A$id", canInvite: Boolean = true) = Admin(id, name, false, canInvite)
+private fun admin(id: Long, name: String = "A$id", canInvite: Boolean = true, canBan: Boolean = false) = Admin(id, name, false, canInvite, canBan)
 
 private class Env(name: String) {
     val db = testDb(name)
@@ -36,6 +36,9 @@ private class Env(name: String) {
 
     fun pending(chat: Long = CHAT, answers: Map<String, String>? = mapOf("q1" to "fun", "q2" to "Oslo")) =
         subs.create(chat, APPLICANT, 1, ann, answers, Status.PENDING, clock.instant())
+
+    fun check(chat: Long = CHAT, kind: Kind = Kind.CHECK) =
+        subs.create(chat, APPLICANT, 1, ann, mapOf("q1" to "fun", "q2" to "Oslo"), if (kind == Kind.UPDATE) Status.APPROVED else Status.PENDING, clock.instant(), kind)
 
     fun alerts(cb: String) = tg.calls.filter { it.startsWith("answer $cb ") && it.endsWith(" alert") }
 }
@@ -288,5 +291,121 @@ class ReviewServiceTest : StringSpec({
             it.text shouldEndWith "\n\n" + Texts.t("ru", T.REVIEW_SUSPENDED)
             it.buttons shouldBe emptyList()
         }
+    }
+
+    "check copies go only to admins who can ban, with Approve and Remove" {
+        val e = Env("check-copies")
+        e.group(CHAT, admin(1, canBan = true), admin(2))
+        e.users.started(1, "en"); e.users.started(2, "en")
+        val id = e.check()
+        e.review.submit(id)
+        e.tg.sent.map { it.chatId } shouldBe listOf(1L)
+        e.tg.sent[0].text shouldContain "Member check: Ann in Club$CHAT"
+        e.tg.sent[0].buttons.flatten().map { it.text to it.data } shouldBe listOf("Approve" to "r|$id|a", "Remove" to "r|$id|j")
+    }
+
+    "approving a check passes the member without a Telegram call" {
+        val e = Env("check-approve")
+        e.group(CHAT, admin(1, "Bob", canBan = true))
+        e.users.started(1, "en"); e.users.started(APPLICANT, "en")
+        val id = e.check()
+        e.review.submit(id)
+        e.review.onDecision(1, "c1", "r|$id|a")
+        e.subs.get(id)!!.status shouldBe Status.APPROVED
+        e.tg.calls.none { it.startsWith("approve") || it.startsWith("decline") || it.startsWith("ban") || it.startsWith("unban") } shouldBe true
+        e.members.passedAt(CHAT, APPLICANT) shouldBe e.clock.now
+        e.tg.edits.single().text shouldEndWith "Approved by Bob"
+        e.tg.sent.last().let { it.chatId to it.text } shouldBe (APPLICANT to Texts.t("en", T.CHECK_APPROVED_USER, "Club$CHAT"))
+    }
+
+    "removing a check bans, unbans and forgets the member" {
+        val e = Env("check-remove")
+        e.group(CHAT, admin(1, "A1", canBan = true))
+        e.users.started(1, "en"); e.users.started(APPLICANT, "en")
+        e.tg.members[CHAT to APPLICANT] = "member"
+        e.members.pass(CHAT, APPLICANT, e.clock.instant())
+        val id = e.check()
+        e.review.submit(id)
+        e.review.onDecision(1, "c1", "r|$id|j")
+        e.tg.calls.filter { it.startsWith("ban") || it.startsWith("unban") } shouldBe listOf("ban $CHAT $APPLICANT", "unban $CHAT $APPLICANT")
+        e.subs.get(id)!!.status shouldBe Status.REJECTED
+        e.members.known(CHAT, APPLICANT) shouldBe false
+        e.tg.edits.single().text shouldEndWith "Removed by A1"
+        e.tg.sent.last().let { it.chatId to it.text } shouldBe (APPLICANT to Texts.t("en", T.CHECK_REMOVED_USER, "Club$CHAT"))
+    }
+
+    "removing someone who left marks the check withdrawn" {
+        val e = Env("check-gone")
+        e.group(CHAT, admin(1, canBan = true))
+        e.users.started(1, "en"); e.users.started(APPLICANT, "en")
+        val id = e.check() // members has no entry: getChatMember says left
+        e.review.submit(id)
+        e.review.onDecision(1, "c1", "r|$id|j")
+        e.subs.get(id)!!.status shouldBe Status.WITHDRAWN
+        e.tg.calls.none { it.startsWith("ban") } shouldBe true
+        e.tg.edits.single().text shouldEndWith Texts.t("en", T.WITHDRAWN)
+        e.tg.sent.none { it.chatId == APPLICANT } shouldBe true
+    }
+
+    "removing without the ban right reverts and says why" {
+        val e = Env("check-no-right")
+        e.group(CHAT, admin(1, canBan = true))
+        e.users.started(1, "en")
+        e.tg.members[CHAT to APPLICANT] = "member"
+        e.members.pass(CHAT, APPLICANT, e.clock.instant())
+        e.tg.banResult = Kick.NO_RIGHT
+        val id = e.check()
+        e.review.submit(id)
+        e.review.onDecision(1, "c1", "r|$id|j")
+        e.subs.get(id)!!.status shouldBe Status.PENDING
+        e.alerts("c1") shouldBe listOf("answer c1 ${Texts.t("en", T.NO_BAN_RIGHT)} alert")
+        e.members.known(CHAT, APPLICANT) shouldBe true
+        e.tg.edits shouldBe emptyList()
+    }
+
+    "a transient ban failure reverts with try again" {
+        val e = Env("check-transient")
+        e.group(CHAT, admin(1, canBan = true))
+        e.users.started(1, "en")
+        e.tg.members[CHAT to APPLICANT] = "member"
+        e.tg.banResult = Kick.TRANSIENT
+        val id = e.check()
+        e.review.submit(id)
+        e.review.onDecision(1, "c1", "r|$id|j")
+        e.subs.get(id)!!.status shouldBe Status.PENDING
+        e.alerts("c1") shouldBe listOf("answer c1 ${Texts.t("en", T.TRY_AGAIN)} alert")
+    }
+
+    "an invite-only admin can't decide a check" {
+        val e = Env("check-invite-only")
+        e.group(CHAT, admin(1, canBan = true), admin(2))
+        val id = e.check()
+        e.review.onDecision(2, "c1", "r|$id|j")
+        e.subs.get(id)!!.status shouldBe Status.PENDING
+        e.alerts("c1") shouldBe listOf("answer c1 ${Texts.t(null, T.NOT_ADMIN_ANYMORE)} alert")
+        e.tg.calls.none { it.startsWith("ban") } shouldBe true
+    }
+
+    "an update goes to deciders as a copy without buttons" {
+        val e = Env("update-copy")
+        e.group(CHAT, admin(1), admin(2, canInvite = false, canBan = true))
+        e.users.started(1, "en"); e.users.started(2, "en")
+        val id = e.check(kind = Kind.UPDATE)
+        e.review.notifyUpdate(id)
+        e.tg.sent.map { it.chatId } shouldBe listOf(1L)
+        e.tg.sent[0].text shouldContain "Updated answers: Ann in Club$CHAT"
+        e.tg.sent[0].buttons shouldBe emptyList()
+        e.subs.reviewMessages(id) shouldBe emptyList()
+    }
+
+    "pending checks reach only check deciders on /start" {
+        val e = Env("check-deliver")
+        e.group(CHAT, admin(1), admin(2, canBan = true))
+        e.users.started(1, "en"); e.users.started(2, "en")
+        val c = e.check(); val j = e.pending()
+        e.review.deliverPending(1) shouldBe 1
+        e.subs.reviewMessages(j).map { it.first } shouldBe listOf(1L)
+        e.subs.reviewMessages(c) shouldBe emptyList()
+        e.review.deliverPending(2) shouldBe 2 // Invite + Ban: both
     }
 })

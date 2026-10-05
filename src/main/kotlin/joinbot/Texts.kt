@@ -6,7 +6,8 @@ import java.util.Locale
 //   NUDGE(count: Int), GROUP_HANDOFF(count: Int)
 //   FORM_FOR(groupTitle), QUEUED(groupTitle)
 //   DECIDED_BY_APPROVED(name), DECIDED_BY_REJECTED(name), ALREADY_DECIDED(name)
-//   REVIEW_HEADER(applicantName, groupTitle), REVIEW_UNREACHABLE(applicantName)
+//   REVIEW_HEADER(applicantName, groupTitle), CHECK_HEADER(applicantName, groupTitle), UPDATE_HEADER(applicantName, groupTitle), REVIEW_UNREACHABLE(applicantName)
+//   DECIDED_BY_REMOVED(name), CHECK_APPROVED_USER(groupTitle), CHECK_REMOVED_USER(groupTitle)
 //   INVALID_TOO_FEW(min: Int), INVALID_TOO_MANY(max: Int), MULTI_EXACT(n: Int), MULTI_RANGE(min: Int, max: Int), MULTI_UP_TO(max: Int)
 // AN_ADMIN is the decider name when they are no longer an admin.
 // Always formatted, so a forgotten arg throws. Avoid a literal percent sign in any text.
@@ -19,6 +20,7 @@ enum class T {
     TRY_AGAIN, WITHDRAWN, AN_ADMIN, NUDGE, NEEDS_INVITE_RIGHT, EXPORT_READY,
     MANUAL_REVIEW, REVIEW_SUSPENDED, GROUP_HANDOFF, MULTI_EXACT, MULTI_RANGE, MULTI_UP_TO,
     FORM_FOR, QUEUED, CHECK_FORM_CLOSED, UPDATE_SAVED, FORM_CLOSED,
+    CHECK_HEADER, UPDATE_HEADER, REMOVE, DECIDED_BY_REMOVED, CHECK_APPROVED_USER, CHECK_REMOVED_USER, NO_BAN_RIGHT,
 }
 
 private val en = mapOf(
@@ -74,6 +76,13 @@ private val en = mapOf(
     T.CHECK_FORM_CLOSED to "Form closed. Tap the button in the group to start again.",
     T.UPDATE_SAVED to "Thanks! Your updated answers were saved.",
     T.FORM_CLOSED to "This form is closed.",
+    T.CHECK_HEADER to "Member check: %s in %s",
+    T.UPDATE_HEADER to "Updated answers: %s in %s",
+    T.REMOVE to "Remove",
+    T.DECIDED_BY_REMOVED to "Removed by %s",
+    T.CHECK_APPROVED_USER to "You're all set in %s.",
+    T.CHECK_REMOVED_USER to "The admins removed you from %s. You can ask to join again.",
+    T.NO_BAN_RIGHT to "The bot can't remove members: give it the Ban users right.",
 )
 
 private val ru = mapOf(
@@ -129,6 +138,13 @@ private val ru = mapOf(
     T.CHECK_FORM_CLOSED to "Анкета закрыта. Нажмите кнопку в группе, чтобы начать заново.",
     T.UPDATE_SAVED to "Спасибо! Обновлённые ответы сохранены.",
     T.FORM_CLOSED to "Эта анкета закрыта.",
+    T.CHECK_HEADER to "Проверка участника: %s в %s",
+    T.UPDATE_HEADER to "Обновлённые ответы: %s в %s",
+    T.REMOVE to "Исключить",
+    T.DECIDED_BY_REMOVED to "Исключил(а): %s",
+    T.CHECK_APPROVED_USER to "Всё в порядке, вы остаётесь в %s.",
+    T.CHECK_REMOVED_USER to "Администраторы исключили вас из %s. Можно подать заявку снова.",
+    T.NO_BAN_RIGHT to "Бот не может исключать участников: дайте ему право «Блокировать пользователей».",
 )
 
 object Texts {
