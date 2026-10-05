@@ -24,14 +24,14 @@ class MiniAppDeps(
 @Serializable data class SavedDto(val version: Int)
 @Serializable data class ErrorsDto(val errors: List<String>)
 @Serializable data class SubmissionRow(
-    val id: Long, val userId: Long, val name: String, val username: String?, val status: Status,
+    val id: Long, val userId: Long, val name: String, val username: String?, val kind: Kind, val status: Status,
     val createdAt: String, val decidedBy: Long?,
 )
 @Serializable data class AnswerDto(val fieldId: String, val prompt: String, val value: String)
 @Serializable data class SubmissionDetail(val row: SubmissionRow, val answers: List<AnswerDto>?, val partial: Boolean)
 @Serializable data class SettingsBody(val retentionDays: Int)
 
-private fun Submission.row() = SubmissionRow(id, userId, profile.name, profile.username, status, createdAt.toString(), decidedBy)
+private fun Submission.row() = SubmissionRow(id, userId, profile.name, profile.username, kind, status, createdAt.toString(), decidedBy)
 
 /** Group titles go into a file name: keep a safe alphabet only. */
 internal fun exportFileName(title: String) = title.map { if (it in 'A'..'Z' || it in 'a'..'z' || it in '0'..'9' || it in "._-") it else '_' }
@@ -82,7 +82,7 @@ fun Route.api(d: MiniAppDeps) {
         inGroup(d, false) { _, g ->
             val raw = call.request.queryParameters["status"]?.takeIf { it.isNotEmpty() }
             val status = raw?.let { s -> Status.entries.find { it.name == s } ?: return@inGroup call.respond(HttpStatusCode.BadRequest) }
-            call.respond(d.subs.list(g.chatId, status).map { it.row() })
+            call.respond(d.subs.latest(g.chatId, status).map { it.row() })
         }
     }
     get("/groups/{id}/submissions/{sid}") {
@@ -103,7 +103,7 @@ fun Route.api(d: MiniAppDeps) {
     }
     post("/groups/{id}/export") {
         inGroup(d, true) { v, g ->
-            val csv = toCsv(d.forms.all(g.chatId), d.subs.list(g.chatId, null)).toByteArray()
+            val csv = toCsv(d.forms.all(g.chatId), d.subs.latest(g.chatId, null)).toByteArray()
             when (d.bot.sendFile(v.userId, exportFileName(g.title), csv)) {
                 is Sent.Ok -> call.respond(HttpStatusCode.Accepted)
                 Sent.Forbidden -> call.respond(HttpStatusCode.Conflict) // the user must start the bot first

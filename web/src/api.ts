@@ -3,9 +3,10 @@ import type { Form } from './editor'
 
 export type Group = { id: number; title: string; hasForm: boolean; retentionDays: number; active: boolean }
 export type FormDto = { version: number; schema: Form | null }
-export type Status = 'PENDING' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN' | 'EXPIRED'
-export const STATUSES: Status[] = ['PENDING', 'APPROVED', 'REJECTED', 'WITHDRAWN', 'EXPIRED']
-export type SubmissionRow = { id: number; userId: number; name: string; username: string | null; status: Status; createdAt: string; decidedBy: number | null }
+export type Status = 'PENDING' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN' | 'EXPIRED' | 'REMOVED'
+export type Kind = 'JOIN' | 'CHECK' | 'UPDATE'
+export const STATUSES: Status[] = ['PENDING', 'APPROVED', 'REJECTED', 'WITHDRAWN', 'EXPIRED', 'REMOVED']
+export type SubmissionRow = { id: number; userId: number; name: string; username: string | null; kind: Kind; status: Status; createdAt: string; decidedBy: number | null }
 export type Answer = { fieldId: string; prompt: string; value: string }
 export type SubmissionDetail = { row: SubmissionRow; answers: Answer[] | null; partial: boolean }
 

@@ -149,6 +149,18 @@ class MiniAppApiTest : StringSpec({
             get("/api/groups/$G1/submissions?status=bogus").status shouldBe HttpStatusCode.BadRequest
         }
     }
+    "submissions list shows each person's latest, then filters; rows carry their kind" {
+        val e = ApiEnv("api-latest")
+        val t = e.clock.instant()
+        e.subs.create(G1, 5, 1, Profile("Ann", null), null, Status.REJECTED, t)
+        e.subs.create(G1, 5, 1, Profile("Ann", null), null, Status.PENDING, t, Kind.CHECK)
+        e.run {
+            val all = parse(get("/api/groups/$G1/submissions").bodyAsText()).jsonArray
+            all.size shouldBe 1
+            all[0].jsonObject["kind"]!!.jsonPrimitive.content shouldBe "CHECK"
+            parse(get("/api/groups/$G1/submissions?status=REJECTED").bodyAsText()).jsonArray.size shouldBe 0
+        }
+    }
     "submission detail flags a partial submission" {
         val e = ApiEnv("api-partial")
         e.forms.save(G1, form, 0, 1, e.clock.instant())

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { api, ApiError, STATUSES, type Group, type Status, type SubmissionDetail, type SubmissionRow } from '../api'
+  import { api, ApiError, STATUSES, type Group, type Kind, type Status, type SubmissionDetail, type SubmissionRow } from '../api'
   import { t } from '../i18n'
   import { confirmed, haptic } from '../tg'
   import Avatar from '../ui/Avatar.svelte'
@@ -33,10 +33,10 @@
     finally { busy = false }
   }
   const date = (s: string) => new Date(s).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-  const badge: Record<Status, string> = { PENDING: 'badge-info', APPROVED: 'badge-success', REJECTED: 'badge-error', WITHDRAWN: 'badge-ghost', EXPIRED: 'badge-ghost' }
+  const badge: Record<Status, string> = { PENDING: 'badge-info', APPROVED: 'badge-success', REJECTED: 'badge-error', WITHDRAWN: 'badge-ghost', EXPIRED: 'badge-ghost', REMOVED: 'badge-ghost' }
 </script>
 
-{#snippet pill(s: Status)}<span class="badge badge-soft badge-sm font-semibold {badge[s]}">{t[s]}</span>{/snippet}
+{#snippet pill(s: Status, k: Kind)}<span class="flex flex-none gap-1"><span class="badge badge-soft badge-sm badge-neutral font-semibold">{t[k]}</span><span class="badge badge-soft badge-sm font-semibold {badge[s]}">{t[s]}</span></span>{/snippet}
 
 {#if detail}
   {@const r = detail.row}
@@ -46,7 +46,7 @@
     <Avatar id={r.userId} name={r.name} size={72} />
     <div class="mt-1 text-[19px] font-semibold">{r.name}</div>
     <div class="text-hint">{r.username ? `@${r.username} · ` : ''}{date(r.createdAt)}</div>
-    {@render pill(r.status)}
+    {@render pill(r.status, r.kind)}
   </div>
   {#if detail.partial}<div role="alert" class="alert alert-warning alert-soft mb-2 text-sm">{t.partial}</div>{/if}
   {#if detail.answers}
@@ -81,7 +81,7 @@
             <div class="truncate">{r.name}{#if r.username}<span class="ml-1 text-hint">@{r.username}</span>{/if}</div>
             <div class="truncate text-[13px] text-hint">{date(r.createdAt)}</div>
           </div>
-          {@render pill(r.status)}
+          {@render pill(r.status, r.kind)}
         </button>
       {/each}
     </div>

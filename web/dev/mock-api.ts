@@ -17,12 +17,12 @@ let schema: any = { welcome: 'Hi! A few questions before you join', fields: [
 ] }
 const now = Date.now(), h = 3600e3
 let rows = [
-  { id: 6, userId: 101, name: 'Anna Kova', username: 'annak', status: 'PENDING', createdAt: new Date(now - h).toISOString(), decidedBy: null },
-  { id: 5, userId: 102, name: 'Marios Petrou', username: null, status: 'PENDING', createdAt: new Date(now - 3 * h).toISOString(), decidedBy: null },
-  { id: 4, userId: 103, name: 'Sofia Lambrou', username: 'sofl', status: 'PENDING', createdAt: new Date(now - 26 * h).toISOString(), decidedBy: null },
-  { id: 3, userId: 104, name: 'Dmitri T.', username: 'dmt', status: 'APPROVED', createdAt: new Date(now - 50 * h).toISOString(), decidedBy: 1 },
-  { id: 2, userId: 105, name: 'Elena H.', username: null, status: 'REJECTED', createdAt: new Date(now - 74 * h).toISOString(), decidedBy: 1 },
-  { id: 1, userId: 106, name: 'George N.', username: null, status: 'EXPIRED', createdAt: new Date(now - 240 * h).toISOString(), decidedBy: null },
+  { id: 6, userId: 101, name: 'Anna Kova', username: 'annak', kind: 'CHECK', status: 'PENDING', createdAt: new Date(now - h).toISOString(), decidedBy: null },
+  { id: 5, userId: 102, name: 'Marios Petrou', username: null, kind: 'JOIN', status: 'PENDING', createdAt: new Date(now - 3 * h).toISOString(), decidedBy: null },
+  { id: 4, userId: 103, name: 'Sofia Lambrou', username: 'sofl', kind: 'UPDATE', status: 'PENDING', createdAt: new Date(now - 26 * h).toISOString(), decidedBy: null },
+  { id: 3, userId: 104, name: 'Dmitri T.', username: 'dmt', kind: 'JOIN', status: 'APPROVED', createdAt: new Date(now - 50 * h).toISOString(), decidedBy: 1 },
+  { id: 2, userId: 105, name: 'Elena H.', username: null, kind: 'CHECK', status: 'REJECTED', createdAt: new Date(now - 74 * h).toISOString(), decidedBy: 1 },
+  { id: 1, userId: 106, name: 'George N.', username: null, kind: 'JOIN', status: 'EXPIRED', createdAt: new Date(now - 240 * h).toISOString(), decidedBy: null },
 ]
 const answers = [
   { fieldId: 'a1', prompt: 'Where do you live?', value: 'Limassol' },
