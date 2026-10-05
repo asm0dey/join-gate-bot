@@ -374,4 +374,41 @@ class CheckServiceTest : StringSpec({
         e.checks.undelivered(ADMIN).shouldBeEmpty()
         e.svc.deliverNotices(ADMIN) shouldBe 0
     }
+    "a failed admin lookup leaves the check open for the next tick" {
+        val e = CheckEnv("cs-deadline-lookup")
+        e.dueCheck()
+        e.member(U)
+        val admins = e.tg.adminsOf.remove(CHAT)!!
+        e.svc.tick()
+        e.checks.openCheck(CHAT) shouldBe e.checks.get(CHAT)
+        e.checks.get(CHAT)!!.closedAt.shouldBeNull()
+        e.tg.sent.shouldBeEmpty()
+        e.tg.edits.shouldBeEmpty()
+        e.tg.adminsOf[CHAT] = admins
+        e.svc.tick()
+        e.tg.sent.single().buttons.single().single().data shouldBe "k|$CHAT|$U"
+        e.tg.edits.size shouldBe 2
+    }
+
+    "an inactive group's due check closes without a list" {
+        val e = CheckEnv("cs-deadline-inactive")
+        e.dueCheck()
+        e.member(U)
+        e.groups.upsert(CHAT, "Club", false)
+        e.svc.tick()
+        e.checks.get(CHAT)!!.closedAt shouldBe e.clock.instant()
+        e.tg.edits.map { it.messageId } shouldBe listOf(11L, 12L)
+        e.tg.sent.shouldBeEmpty()
+    }
+
+    "two Remove clicks for the same person record one removal" {
+        val e = CheckEnv("cs-remove-twice")
+        e.member(U)
+        coroutineScope {
+            repeat(2) { launch(Dispatchers.Default) { e.svc.onRemoveButton(ADMIN, "cb", "k|$CHAT|$U", 900, "list", emptyList()) } }
+        }
+        e.subs.list(CHAT, Status.REMOVED).size shouldBe 1
+        e.tg.calls.filter { it.startsWith("answer") }.toSet() shouldBe setOf("answer cb ", "answer cb ${Texts.t(null, T.ALREADY_REMOVED)} alert")
+        e.tg.edits.size shouldBe 1
+    }
 })

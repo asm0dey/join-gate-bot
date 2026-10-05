@@ -31,9 +31,9 @@ class MemberRepo(private val db: Database) {
         Unit
     }
 
-    fun remove(chatId: Long, userId: Long) = transaction(db) {
-        Members.deleteWhere { (Members.chatId eq chatId) and (Members.userId eq userId) }
-        Unit
+    /** True for the one caller that deleted the row. */
+    fun remove(chatId: Long, userId: Long): Boolean = transaction(db) {
+        Members.deleteWhere { (Members.chatId eq chatId) and (Members.userId eq userId) } > 0
     }
 
     fun passedAt(chatId: Long, userId: Long): Instant? = transaction(db) {

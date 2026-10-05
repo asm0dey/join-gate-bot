@@ -134,15 +134,21 @@ class CheckService(
         flow.startMember(chatId, userId, profile, lang, Kind.UPDATE)
     }
 
-    /** One deadline pass (spec §5). The conditional close makes each check's list go out once, however many passes overlap. */
+    /**
+     * One deadline pass (spec §5). The conditional close makes each check's list go out once, however many passes overlap.
+     * Deciders and the list are settled before closing, so a failed admin lookup leaves the check open for the next pass.
+     */
     suspend fun tick() {
         val now = clock.instant()
         for (c in checks.due(now)) {
             try {
+                if (groups.get(c.chatId)?.active != true) { closeForChat(c.chatId); continue } // spec §7: no list
+                val deciders = admins.checkDecidersOrNull(c.chatId)
+                if (deciders == null) { log.warn("deadline postponed: admin lookup failed"); continue }
+                val roll = roll(c)
                 if (!checks.close(c.chatId, now)) continue
                 closePosts(c.chatId, c.deadline, now)
-                val roll = roll(c)
-                for (adminId in admins.checkDeciders(c.chatId)) checks.notice(c.chatId, adminId, sendRoll(roll, adminId))
+                for (adminId in deciders) checks.notice(c.chatId, adminId, sendRoll(roll, adminId))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -203,14 +209,14 @@ class CheckService(
         if (members.passedAt(chatId, userId) != null) return alert(T.PASSED_SINCE, name)
         if (subs.pendingCheck(chatId, userId) != null) return alert(T.PENDING_SINCE, name)
         if (!members.known(chatId, userId)) return alert(T.ALREADY_REMOVED)
-        // ponytail: two deciders clicking the same person at once can both kick and record; a conditional roster delete if that matters
         when (bot.removeMember(chatId, userId)) {
             Kick.OK, Kick.GONE -> {}
             Kick.NO_RIGHT -> return alert(T.NO_BAN_RIGHT)
             Kick.TRANSIENT -> return alert(T.TRY_AGAIN)
         }
+        // two deciders clicking the same person at once may both kick; only the one that deletes the roster row records it
+        if (!members.remove(chatId, userId)) return alert(T.ALREADY_REMOVED)
         val now = clock.instant()
-        members.remove(chatId, userId)
         subs.create(chatId, userId, null, profile ?: Profile(name, null), null, Status.REMOVED, now, Kind.CHECK, adminId, now)
         bot.answerCallback(callbackId)
         val rest = keyboard.map { row -> row.filter { it.data != data } }.filter { it.isNotEmpty() }

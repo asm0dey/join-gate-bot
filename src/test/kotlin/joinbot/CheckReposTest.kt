@@ -83,6 +83,7 @@ class CheckReposTest : StringSpec({
         m.unpassed(CHAT) shouldBe listOf(1L)
         m.passedGroups(2).shouldContainExactlyInAnyOrder(CHAT, 2L)
         m.count(CHAT) shouldBe 2
-        m.remove(CHAT, 1); m.known(CHAT, 1) shouldBe false
+        m.remove(CHAT, 1) shouldBe true; m.known(CHAT, 1) shouldBe false
+        m.remove(CHAT, 1) shouldBe false
     }
 })

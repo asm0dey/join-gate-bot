@@ -25,6 +25,10 @@ class AdminCheck(
 
     suspend fun checkDeciders(chatId: Long): List<Long> = load(chatId, false).checkDeciders()
 
+    /** A fresh lookup; null when it failed, unlike [checkDeciders], whose failed lookup reads as nobody. */
+    suspend fun checkDecidersOrNull(chatId: Long): List<Long>? =
+        bot.chatAdmins(chatId)?.also { cache[chatId] = clock.instant() to it }?.checkDeciders()
+
     /** Whether the bot's own admin entry has Ban users. */
     suspend fun botCanBan(chatId: Long): Boolean = load(chatId, false).any { it.userId == botId && it.canBan }
 
