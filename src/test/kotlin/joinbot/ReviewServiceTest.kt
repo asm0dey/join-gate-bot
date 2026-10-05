@@ -25,7 +25,7 @@ private class Env(name: String) {
     val forms = FormRepo(db)
     val subs = SubmissionRepo(db, testCrypto())
     val users = BotUserRepo(db)
-    val review = ReviewService(subs, forms, groups, users, AdminCheck(tg.bot, clock), tg.bot, clock)
+    val review = ReviewService(subs, forms, groups, users, AdminCheck(tg.bot, clock, 0), tg.bot, clock)
 
     fun group(chat: Long = CHAT, vararg admins: Admin) {
         groups.upsert(chat, "Club$chat", true)

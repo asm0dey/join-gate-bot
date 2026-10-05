@@ -106,4 +106,42 @@ class TelegramTest : StringSpec({
         shouldThrow<java.util.MissingFormatArgumentException> { Texts.t(null, T.NUDGE) }
     }
     "every Reason has a text" { Reason.entries.forEach { Texts.t(null, it.text(), *(expectedArgs[it.text()] ?: emptyArray())).shouldNotBeBlank() } }
+
+    "removeMember bans then unbans a member" {
+        val fake = FakeTelegram().apply { members[-100L to 5L] = "member" }
+        fake.bot.removeMember(-100, 5) shouldBe Kick.OK
+        fake.calls.filter { it.contains("ban") } shouldBe listOf("ban -100 5", "unban -100 5")
+    }
+    "removeMember on someone who left is GONE" {
+        val fake = FakeTelegram()
+        fake.bot.removeMember(-100, 5) shouldBe Kick.GONE
+        fake.calls.none { it.contains("ban") } shouldBe true
+    }
+    "removeMember without the right is NO_RIGHT" {
+        val fake = FakeTelegram().apply { members[-100L to 5L] = "member"; banResult = Kick.NO_RIGHT }
+        fake.bot.removeMember(-100, 5) shouldBe Kick.NO_RIGHT
+    }
+    "removeMember transient ban failure is TRANSIENT" {
+        val fake = FakeTelegram().apply { members[-100L to 5L] = "member"; banResult = Kick.TRANSIENT }
+        fake.bot.removeMember(-100, 5) shouldBe Kick.TRANSIENT
+    }
+    "memberInfo maps statuses" {
+        val fake = FakeTelegram().apply {
+            members[-100L to 1L] = "restricted"; members[-100L to 2L] = "creator"; members[-100L to 3L] = "kicked"
+            members[-100L to 4L] = "administrator"; members[-100L to 5L] = "member"; members[-100L to 6L] = "left"
+        }
+        val want = Profile("User", "user")
+        fake.bot.memberInfo(-100, 1) shouldBe MemberInfo(Membership.MEMBER, want)
+        fake.bot.memberInfo(-100, 2) shouldBe MemberInfo(Membership.ADMIN, want)
+        fake.bot.memberInfo(-100, 3) shouldBe MemberInfo(Membership.GONE, want)
+        fake.bot.memberInfo(-100, 4) shouldBe MemberInfo(Membership.ADMIN, want)
+        fake.bot.memberInfo(-100, 5) shouldBe MemberInfo(Membership.MEMBER, want)
+        fake.bot.memberInfo(-100, 6) shouldBe MemberInfo(Membership.GONE, want)
+    }
+    "memberCount and botUsername" {
+        val fake = FakeTelegram().apply { memberCount = 42 }
+        fake.bot.memberCount(-100) shouldBe 42
+        fake.bot.botUsername() shouldBe "fakebot"
+        FakeTelegram().bot.memberCount(-100) shouldBe null
+    }
 })

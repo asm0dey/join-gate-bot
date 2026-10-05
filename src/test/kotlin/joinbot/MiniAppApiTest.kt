@@ -35,7 +35,7 @@ private class ApiEnv(name: String, val webDir: File = File("/nonexistent")) {
     val tg = FakeTelegram()
     val groups = GroupRepo(db); val forms = FormRepo(db); val subs = SubmissionRepo(db, testCrypto())
     val deps = MiniAppDeps({ t -> t.removePrefix("u").toLongOrNull()?.let { Viewer(it, null, null) } }, groups, forms, subs,
-        AdminCheck(tg.bot, clock), tg.bot, BotUserRepo(db), clock)
+        AdminCheck(tg.bot, clock, 0), tg.bot, BotUserRepo(db), clock)
 
     init {
         groups.upsert(G1, "My Club/ü", true); groups.upsert(G2, "Other", true)

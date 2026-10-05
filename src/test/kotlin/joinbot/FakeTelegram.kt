@@ -45,6 +45,11 @@ class FakeTelegram {
     @Volatile var decideResult: Decision = Decision.OK
     /** A chat without an entry fails the lookup. */
     val adminsOf: MutableMap<Long, List<Admin>> = ConcurrentHashMap()
+    /** Status per (chat, user) as getChatMember reports it; absent = "left". */
+    val members: MutableMap<Pair<Long, Long>, String> = ConcurrentHashMap()
+    @Volatile var memberCount: Int? = null
+    /** Result of banChatMember: OK, NO_RIGHT or TRANSIENT (GONE is treated as OK). */
+    @Volatile var banResult: Kick = Kick.OK
     /** Declining these users fails at the transport level. */
     val failDeclineFor: MutableSet<Long> = ConcurrentHashMap.newKeySet()
     private val ids = AtomicLong(100)
@@ -72,7 +77,7 @@ class FakeTelegram {
             calls += "doc $chat $name"
             sent(chat, result(chat))
         }
-        else -> handleJson(method, Json.parseToJsonElement(body).jsonObject)
+        else -> handleJson(method, if (body.isBlank()) JsonObject(emptyMap()) else Json.parseToJsonElement(body).jsonObject)
     }
 
     private fun MockRequestHandleScope.handleJson(method: String, j: JsonObject) = when (method) {
@@ -110,6 +115,24 @@ class FakeTelegram {
             adminsOf[chat]?.let { admins -> ok(admins.joinToString(",", "[", "]") { it.json() }) }
                 ?: fail(400, "Bad Request: chat not found")
         }
+        "getChatMember" -> {
+            val chat = j.long("chat_id"); val user = j.long("user_id")
+            ok(memberJson(user, members[chat to user] ?: "left"))
+        }
+        "getChatMemberCount" -> memberCount?.let { ok("$it") } ?: fail(400, "Bad Request: chat not found")
+        "banChatMember" -> {
+            calls += "ban ${j.long("chat_id")} ${j.long("user_id")}"
+            when (banResult) {
+                Kick.NO_RIGHT -> fail(400, "Bad Request: not enough rights to restrict/unrestrict chat member")
+                Kick.TRANSIENT -> fail(500, "Internal Server Error")
+                else -> ok("true")
+            }
+        }
+        "unbanChatMember" -> {
+            calls += "unban ${j.long("chat_id")} ${j.long("user_id")}"
+            ok("true")
+        }
+        "getMe" -> ok("""{"id":0,"is_bot":true,"first_name":"Fake","username":"fakebot"}""")
         else -> error("FakeTelegram: unexpected method $method")
     }
 
@@ -162,5 +185,21 @@ private fun JsonObject.buttons(): Keyboard =
 private fun Admin.json() =
     """{"status":"administrator","user":{"id":$userId,"is_bot":$isBot,"first_name":${Json.encodeToString(name)}},
     "can_be_edited":false,"is_anonymous":false,"can_manage_chat":true,"can_delete_messages":false,
-    "can_restrict_members":false,"can_promote_members":false,"can_change_info":false,"can_invite_users":$canInvite,
+    "can_restrict_members":$canBan,"can_promote_members":false,"can_change_info":false,"can_invite_users":$canInvite,
     "can_manage_video_chats":false,"can_post_stories":false,"can_edit_stories":false,"can_delete_stories":false}"""
+
+private fun memberJson(id: Long, status: String): String {
+    val user = """"user":{"id":$id,"is_bot":false,"first_name":"User","username":"user"}"""
+    val rest = listOf(
+        "can_send_messages", "can_send_audios", "can_send_documents", "can_send_photos", "can_send_videos",
+        "can_send_video_notes", "can_send_voice_notes", "can_send_polls", "can_send_other_messages",
+        "can_add_web_page_previews", "can_react_to_messages", "can_edit_tag", "can_change_info", "can_invite_users",
+        "can_pin_messages", "can_manage_topics",
+    ).joinToString(",") { """"$it":false""" }
+    return when (status) {
+        "creator" -> """{"status":"creator",$user,"is_anonymous":false}"""
+        "administrator" -> Admin(id, "User", false, false).json().replaceFirst(""""first_name":"User"""", """"first_name":"User","username":"user"""")
+        "restricted" -> """{"status":"restricted",$user,"is_member":true,$rest,"until_date":0}"""
+        else -> """{"status":"$status",$user${if (status == "kicked") ""","until_date":0""" else ""}}"""
+    }
+}

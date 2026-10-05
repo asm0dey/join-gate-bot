@@ -3,9 +3,14 @@ package joinbot
 import eu.vendeli.tgbot.TelegramBot
 import eu.vendeli.tgbot.annotations.internal.KtGramInternal
 import eu.vendeli.tgbot.api.answer.answerCallbackQuery
+import eu.vendeli.tgbot.api.botactions.getMe
 import eu.vendeli.tgbot.api.chat.approveChatJoinRequest
+import eu.vendeli.tgbot.api.chat.banChatMember
 import eu.vendeli.tgbot.api.chat.declineChatJoinRequest
 import eu.vendeli.tgbot.api.chat.getChatAdministrators
+import eu.vendeli.tgbot.api.chat.getChatMember
+import eu.vendeli.tgbot.api.chat.getChatMemberCount
+import eu.vendeli.tgbot.api.chat.unbanChatMember
 import eu.vendeli.tgbot.api.media.document
 import eu.vendeli.tgbot.api.message.editMessageText
 import eu.vendeli.tgbot.api.message.message
@@ -35,8 +40,15 @@ sealed interface Sent {
 /** GONE = HIDE_REQUESTER_MISSING or USER_ALREADY_PARTICIPANT in the error description. */
 enum class Decision { OK, GONE, TRANSIENT }
 
-/** [name] is the user's first name, for "decided by Y". The chat owner always has [canInvite]. */
-data class Admin(val userId: Long, val name: String, val isBot: Boolean, val canInvite: Boolean)
+/** [name] is the user's first name, for "decided by Y". The chat owner always has [canInvite] and [canBan]. */
+data class Admin(val userId: Long, val name: String, val isBot: Boolean, val canInvite: Boolean, val canBan: Boolean = false)
+
+/** GONE = not in the chat any more; NO_RIGHT = the bot lacks Ban users. */
+enum class Kick { OK, GONE, NO_RIGHT, TRANSIENT }
+
+enum class Membership { MEMBER, ADMIN, GONE }
+
+data class MemberInfo(val membership: Membership, val profile: Profile)
 
 suspend fun TelegramBot.sendText(chatId: Long, text: String, buttons: Keyboard = emptyList()): Sent {
     val action = message { text }.let { if (buttons.isEmpty()) it else it.inlineKeyboardMarkup { rows(buttons) } }
@@ -69,12 +81,51 @@ suspend fun TelegramBot.chatAdmins(chatId: Long): List<Admin>? {
         ?.result ?: return null
     return members.mapNotNull {
         when (it) {
-            is ChatMember.Owner -> Admin(it.user.id, it.user.firstName, it.user.isBot, true)
-            is ChatMember.Administrator -> Admin(it.user.id, it.user.firstName, it.user.isBot, it.canInviteUsers)
+            is ChatMember.Owner -> Admin(it.user.id, it.user.firstName, it.user.isBot, true, true)
+            is ChatMember.Administrator ->
+                Admin(it.user.id, it.user.firstName, it.user.isBot, it.canInviteUsers, it.canRestrictMembers)
             else -> null
         }
     }
 }
+
+/** Null on failure. A restricted user who already left (is_member false) counts as GONE. */
+suspend fun TelegramBot.memberInfo(chatId: Long, userId: Long): MemberInfo? {
+    val m = (call { getChatMember(userId).sendReturning(chatId, this).await() } as? Response.Success)
+        ?.result ?: return null
+    val u = m.user
+    val membership = when {
+        m is ChatMember.Restricted && !m.isMember -> Membership.GONE
+        m is ChatMember.Member || m is ChatMember.Restricted -> Membership.MEMBER
+        m is ChatMember.Administrator || m is ChatMember.Owner -> Membership.ADMIN
+        else -> Membership.GONE
+    }
+    return MemberInfo(membership, Profile(listOfNotNull(u.firstName, u.lastName).joinToString(" "), u.username))
+}
+
+/** Null on failure. */
+suspend fun TelegramBot.memberCount(chatId: Long): Int? =
+    (call { getChatMemberCount().sendReturning(chatId, this).await() } as? Response.Success)?.result
+
+/** Ban then unban, so the person can rejoin. Unban failure is logged only: they are out either way. */
+suspend fun TelegramBot.removeMember(chatId: Long, userId: Long): Kick {
+    val info = memberInfo(chatId, userId) ?: return Kick.TRANSIENT
+    if (info.membership == Membership.GONE) return Kick.GONE
+    when (val r = call { banChatMember(userId).sendReturning(chatId, this).await() }) {
+        is Response.Success -> {}
+        // ponytail: an admin promoted mid-check also lands in TRANSIENT (its ban fails with another reason)
+        is Response.Failure -> return if (r.description.orEmpty().contains("not enough rights")) Kick.NO_RIGHT else Kick.TRANSIENT
+        null -> return Kick.TRANSIENT
+    }
+    if (call { unbanChatMember(userId, onlyIfBanned = true).sendReturning(chatId, this).await() } !is Response.Success) {
+        log.warn("unban after removal failed")
+    }
+    return Kick.OK
+}
+
+/** Null on failure. One getMe. */
+suspend fun TelegramBot.botUsername(): String? =
+    (call { getMe().sendReturning(this).await() } as? Response.Success)?.result?.username
 
 suspend fun TelegramBot.sendFile(chatId: Long, fileName: String, bytes: ByteArray): Sent {
     val action = document(InputFile(bytes, fileName, "application/octet-stream"))

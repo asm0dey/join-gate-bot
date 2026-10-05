@@ -48,7 +48,7 @@ private class HandlerEnv(name: String) {
     val forms = FormRepo(db)
     val subs = SubmissionRepo(db, testCrypto())
     val users = BotUserRepo(db)
-    val review = ReviewService(subs, forms, groups, users, AdminCheck(tg.bot, clock), tg.bot, clock)
+    val review = ReviewService(subs, forms, groups, users, AdminCheck(tg.bot, clock, 0), tg.bot, clock)
     val sessions = SessionRepo(db, testCrypto())
     val flow = ApplicantFlow(groups, forms, sessions, subs, users, review, tg.bot, clock)
 

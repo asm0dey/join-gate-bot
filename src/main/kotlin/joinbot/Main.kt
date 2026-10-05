@@ -65,7 +65,7 @@ suspend fun main(): Unit = coroutineScope {
         // Failures come back as Response.Failure; Telegram.kt classifies them.
         throwExOnActionsFailure = false
     }
-    val admins = AdminCheck(bot, clock)
+    val admins = AdminCheck(bot, clock, cfg.botToken.substringBefore(':').toLong())
     val review = ReviewService(subs, forms, groups, users, admins, bot, clock)
     val flow = ApplicantFlow(groups, forms, sessions, subs, users, review, bot, clock)
     Registry.flow = flow
