@@ -6,6 +6,7 @@ import io.kotest.matchers.ints.shouldBeGreaterThanOrEqual
 import io.kotest.matchers.ints.shouldBeLessThan
 import io.kotest.matchers.ints.shouldBeLessThanOrEqual
 import io.kotest.matchers.nulls.shouldBeNull
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldEndWith
 import io.kotest.matchers.string.shouldStartWith
@@ -441,6 +442,83 @@ class ApplicantFlowTest : StringSpec({
             listOf(en(T.GROUP_GONE), "${form.welcome}\n\n${en(T.WELCOME_SKIP)}", "Where do you live?")
         e.flow.closeForChat(CHAT)
         e.session(CHAT2)!!.step shouldBe 0
+    }
+
+    "a check form opens with the group name, then the welcome" {
+        val e = FlowEnv("af-check-open")
+        e.groups.upsert(CHAT, "Club", true)
+        e.flow.startMember(CHAT, U, ann, "en", Kind.CHECK)
+        e.toUser().map { it.text } shouldBe listOf("Form for Club", "${form.welcome}\n\n${en(T.WELCOME_SKIP)}", "Where do you live?")
+        e.session()!!.kind shouldBe Kind.CHECK
+    }
+
+    "submitting a check makes a pending CHECK submission" {
+        val e = FlowEnv("af-check-submit")
+        e.flow.startMember(CHAT, U, ann, "en", Kind.CHECK)
+        e.fillTo(7); e.press('S')
+        e.subs.list(CHAT, Status.PENDING).single().kind shouldBe Kind.CHECK
+        e.session().shouldBeNull()
+        e.toUser().any { it.text == en(T.SUBMITTED) } shouldBe true
+    }
+
+    "submitting an update saves it approved, without review buttons" {
+        val e = FlowEnv("af-update-submit")
+        e.flow.startMember(CHAT, U, ann, "en", Kind.UPDATE)
+        e.fillTo(7); e.press('S')
+        val s = e.subs.list(CHAT, Status.APPROVED).single()
+        s.kind shouldBe Kind.UPDATE
+        s.decidedAt.shouldNotBeNull()
+        e.last().text shouldBe en(T.UPDATE_SAVED)
+        e.tg.sent.none { m -> m.chatId == ADMIN && m.buttons.isNotEmpty() } shouldBe true
+    }
+
+    "a check queues behind another group's form and says so" {
+        val e = FlowEnv("af-check-queue")
+        e.group(CHAT2)
+        e.groups.upsert(CHAT, "Club", true)
+        e.join(CHAT2)
+        e.flow.startMember(CHAT, U, ann, "en", Kind.CHECK)
+        e.session(CHAT)!!.step shouldBe WAITING
+        e.last().text shouldBe Texts.t("en", T.QUEUED, "Club")
+    }
+
+    "starting the same check again re-asks the current question" {
+        val e = FlowEnv("af-check-again")
+        e.flow.startMember(CHAT, U, ann, "en", Kind.CHECK)
+        e.fillTo(1)
+        val before = e.toUser().size
+        e.flow.startMember(CHAT, U, ann, "en", Kind.CHECK)
+        e.session()!!.step shouldBe 1
+        e.toUser().drop(before).map { it.text } shouldBe listOf("Agree to the rules?")
+    }
+
+    "disagreeing on consent in a check closes it without declining" {
+        val e = FlowEnv("af-check-disagree")
+        e.flow.startMember(CHAT, U, ann, "en", Kind.CHECK)
+        e.fillTo(6); e.press('n')
+        e.tg.calls.none { it.startsWith("decline") } shouldBe true
+        e.session().shouldBeNull()
+        e.subs.list(CHAT, Status.PENDING).shouldBeEmpty()
+        e.last().text shouldBe en(T.CHECK_FORM_CLOSED)
+    }
+
+    "a 403 mid-check drops the session and sends nothing to deciders" {
+        val e = FlowEnv("af-check-403")
+        e.flow.startMember(CHAT, U, ann, "en", Kind.CHECK)
+        e.tg.sendResultByChat[U] = Sent.Forbidden
+        e.press('p', 0)
+        e.session().shouldBeNull()
+        e.users.dmOk(U) shouldBe false
+        e.subs.list(CHAT, Status.PENDING).shouldBeEmpty()
+        e.tg.sent.none { it.chatId == ADMIN } shouldBe true
+    }
+
+    "closing a group tells check users the form is closed, not about join requests" {
+        val e = FlowEnv("af-check-close")
+        e.flow.startMember(CHAT, U, ann, "en", Kind.CHECK)
+        e.flow.closeForChat(CHAT)
+        e.session().shouldBeNull()
+        e.last().text shouldBe en(T.FORM_CLOSED)
     }
 
     "invalid input does not touch touched_at" {

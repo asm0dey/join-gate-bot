@@ -4,6 +4,7 @@ import java.util.Locale
 
 // Keys with String.format arguments (all others take none):
 //   NUDGE(count: Int), GROUP_HANDOFF(count: Int)
+//   FORM_FOR(groupTitle), QUEUED(groupTitle)
 //   DECIDED_BY_APPROVED(name), DECIDED_BY_REJECTED(name), ALREADY_DECIDED(name)
 //   REVIEW_HEADER(applicantName, groupTitle), REVIEW_UNREACHABLE(applicantName)
 //   INVALID_TOO_FEW(min: Int), INVALID_TOO_MANY(max: Int), MULTI_EXACT(n: Int), MULTI_RANGE(min: Int, max: Int), MULTI_UP_TO(max: Int)
@@ -17,6 +18,7 @@ enum class T {
     REVIEW_HEADER, REVIEW_UNREACHABLE, APPROVE, REJECT, DECIDED_BY_APPROVED, DECIDED_BY_REJECTED, ALREADY_DECIDED, NOT_ADMIN_ANYMORE,
     TRY_AGAIN, WITHDRAWN, AN_ADMIN, NUDGE, NEEDS_INVITE_RIGHT, EXPORT_READY,
     MANUAL_REVIEW, REVIEW_SUSPENDED, GROUP_HANDOFF, MULTI_EXACT, MULTI_RANGE, MULTI_UP_TO,
+    FORM_FOR, QUEUED, CHECK_FORM_CLOSED, UPDATE_SAVED, FORM_CLOSED,
 }
 
 private val en = mapOf(
@@ -67,6 +69,11 @@ private val en = mapOf(
     T.MANUAL_REVIEW to "The group's admins will review your join request directly in Telegram.",
     T.REVIEW_SUSPENDED to "I can no longer approve requests here — use the group's Join requests list.",
     T.GROUP_HANDOFF to "I can't approve join requests any more. %d request(s) wait in this group's Join requests list.",
+    T.FORM_FOR to "Form for %s",
+    T.QUEUED to "You'll get %s's form after you finish the current one.",
+    T.CHECK_FORM_CLOSED to "Form closed. Tap the button in the group to start again.",
+    T.UPDATE_SAVED to "Thanks! Your updated answers were saved.",
+    T.FORM_CLOSED to "This form is closed.",
 )
 
 private val ru = mapOf(
@@ -117,6 +124,11 @@ private val ru = mapOf(
     T.MANUAL_REVIEW to "Администраторы группы рассмотрят вашу заявку прямо в Telegram.",
     T.REVIEW_SUSPENDED to "Я больше не могу принимать заявки здесь — используйте список «Заявки на вступление» в группе.",
     T.GROUP_HANDOFF to "Я больше не могу принимать заявки на вступление. В списке «Заявки на вступление» этой группы ждут заявок: %d.",
+    T.FORM_FOR to "Анкета для %s",
+    T.QUEUED to "Анкета группы %s придёт после того, как вы закончите текущую.",
+    T.CHECK_FORM_CLOSED to "Анкета закрыта. Нажмите кнопку в группе, чтобы начать заново.",
+    T.UPDATE_SAVED to "Спасибо! Обновлённые ответы сохранены.",
+    T.FORM_CLOSED to "Эта анкета закрыта.",
 )
 
 object Texts {

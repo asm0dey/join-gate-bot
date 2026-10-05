@@ -18,6 +18,10 @@ class ReviewService(
     private val subs: SubmissionRepo, private val forms: FormRepo, private val groups: GroupRepo, private val users: BotUserRepo, private val members: MemberRepo,
     private val admins: AdminCheck, private val bot: TelegramBot, private val clock: Clock,
 ) {
+    /** Tells deciders about a saved update. Filled in by the review task. */
+    @Suppress("UNUSED_PARAMETER")
+    suspend fun notifyUpdate(submissionId: Long) {}
+
     suspend fun submit(submissionId: Long) {
         val s = subs.get(submissionId) ?: return
         val g = groups.get(s.chatId)?.takeIf { it.active } ?: return

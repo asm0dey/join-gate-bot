@@ -41,6 +41,17 @@ class PurgeTest : StringSpec({
         e.tg.calls.contains("decline -1 6") shouldBe false
     }
 
+    "an idle check session is closed without an EXPIRED submission or a decline" {
+        val e = PurgeEnv("purge-check")
+        e.groups.upsert(-1, "G", true)
+        e.sessions.put(Session(5, -1, 1, 0, SessionState(ann), "en", e.clock.instant() - Duration.ofDays(8), Kind.CHECK))
+        e.purge.runOnce()
+        e.sessions.get(5, -1).shouldBeNull()
+        e.subs.list(-1, Status.EXPIRED).shouldBeEmpty()
+        e.tg.calls.none { it.startsWith("decline") } shouldBe true
+        e.tg.sent.single { it.chatId == 5L }.text shouldBe Texts.t("en", T.CHECK_FORM_CLOSED)
+    }
+
     "waiting session expires too" {
         val e = PurgeEnv("purge-waiting")
         e.groups.upsert(-1, "G", true)

@@ -17,6 +17,8 @@ private val expectedArgs: Map<T, Array<Any>> = mapOf(
     T.DECIDED_BY_REJECTED to arrayOf("Ann"),
     T.ALREADY_DECIDED to arrayOf("Ann"),
     T.REVIEW_HEADER to arrayOf("Bob", "Group"),
+    T.FORM_FOR to arrayOf("Club"),
+    T.QUEUED to arrayOf("Club"),
     T.REVIEW_UNREACHABLE to arrayOf("Bob"),
     T.INVALID_TOO_FEW to arrayOf(2),
     T.INVALID_TOO_MANY to arrayOf(3),
