@@ -39,7 +39,7 @@ private fun User.profile() = Profile(listOfNotNull(firstName, lastName).joinToSt
 private val START_CHECK = Regex("""/start r(-?\d+)""")
 
 // One place parses `/remind`: no @CommandHandler, so `/remind@botname` and the argument need no second parser.
-private val REMIND = Regex("""/remind(@\w+)?(?:\s+(\S+))?\s*""")
+private val REMIND = Regex("""/remind(@\w+)?(?:\s+(.+?))?\s*""")
 
 /**
  * `/start r<chatId>` enters that group's check. Plain `/start` resumes an open form, else hands an admin their

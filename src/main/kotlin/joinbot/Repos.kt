@@ -88,6 +88,9 @@ class GroupRepo(private val db: Database) {
         Forms.update({ Forms.chatId eq oldId }) { it[chatId] = newId }
         sessions.moveChat(oldId, newId)
         Submissions.update({ Submissions.chatId eq oldId }) { it[chatId] = newId }
+        // a user on both rosters keeps the old row (a new-chat row can't be passed yet); the PK would clash otherwise
+        val oldUsers = Members.selectAll().where { Members.chatId eq oldId }.map { it[Members.userId] }
+        Members.deleteWhere { (Members.chatId eq newId) and (Members.userId inList oldUsers) }
         Members.update({ Members.chatId eq oldId }) { it[chatId] = newId }
         // the parent PK can't be updated in place (children lack ON UPDATE CASCADE): copy, re-point, delete
         Rechecks.selectAll().where { Rechecks.chatId eq oldId }.singleOrNull()?.let { r ->

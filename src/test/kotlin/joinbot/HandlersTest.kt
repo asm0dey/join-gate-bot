@@ -252,6 +252,14 @@ class HandlersTest : StringSpec({
         e.tg.sent.first().buttons.flatten().map { it.data } shouldBe listOf("https://t.me/joinbot?start=r-100")
     }
 
+    "/remind with trailing text gets the bad duration reply" {
+        val e = HandlerEnv("h-remind-extra")
+        e.tg.adminsOf[CHAT] = listOf(Admin(U, "Ann", false, true, true), Admin(0, "Bot", true, true, true))
+        route(message(CHAT, "/remind 3d extra"))
+        e.tg.sent.map { it.chatId to it.text } shouldBe listOf(CHAT to Texts.t(null, T.REMIND_BAD_DURATION))
+        e.checks.get(CHAT) shouldBe null
+    }
+
     "/remind from an anonymous admin gets an explanation" {
         val e = HandlerEnv("h-remind-anon")
         route(upd(

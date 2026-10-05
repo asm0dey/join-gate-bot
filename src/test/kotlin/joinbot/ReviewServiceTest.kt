@@ -308,6 +308,7 @@ class ReviewServiceTest : StringSpec({
         val e = Env("check-approve")
         e.group(CHAT, admin(1, "Bob", canBan = true))
         e.users.started(1, "en"); e.users.started(APPLICANT, "en")
+        e.members.seen(CHAT, APPLICANT)
         val id = e.check()
         e.review.submit(id)
         e.review.onDecision(1, "c1", "r|$id|a")
@@ -343,6 +344,19 @@ class ReviewServiceTest : StringSpec({
         e.review.onDecision(1, "c1", "r|$id|j")
         e.subs.get(id)!!.status shouldBe Status.WITHDRAWN
         e.tg.calls.none { it.startsWith("ban") } shouldBe true
+        e.tg.edits.single().text shouldEndWith Texts.t("en", T.WITHDRAWN)
+        e.tg.sent.none { it.chatId == APPLICANT } shouldBe true
+    }
+
+    "approving a check whose member left the roster withdraws it" {
+        val e = Env("check-approve-gone")
+        e.group(CHAT, admin(1, canBan = true))
+        e.users.started(1, "en"); e.users.started(APPLICANT, "en")
+        val id = e.check() // never on the roster
+        e.review.submit(id)
+        e.review.onDecision(1, "c1", "r|$id|a")
+        e.subs.get(id)!!.status shouldBe Status.WITHDRAWN
+        e.members.passedAt(CHAT, APPLICANT) shouldBe null
         e.tg.edits.single().text shouldEndWith Texts.t("en", T.WITHDRAWN)
         e.tg.sent.none { it.chatId == APPLICANT } shouldBe true
     }

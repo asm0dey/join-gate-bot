@@ -502,6 +502,14 @@ class ApplicantFlowTest : StringSpec({
         e.last().text shouldBe en(T.CHECK_FORM_CLOSED)
     }
 
+    "disagreeing on consent in an update says to send /start" {
+        val e = FlowEnv("af-update-disagree")
+        e.flow.startMember(CHAT, U, ann, "en", Kind.UPDATE)
+        e.fillTo(6); e.press('n')
+        e.session().shouldBeNull()
+        e.last().text shouldBe en(T.UPDATE_FORM_CLOSED)
+    }
+
     "a 403 mid-check drops the session and sends nothing to deciders" {
         val e = FlowEnv("af-check-403")
         e.flow.startMember(CHAT, U, ann, "en", Kind.CHECK)

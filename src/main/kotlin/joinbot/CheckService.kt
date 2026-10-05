@@ -216,6 +216,7 @@ class CheckService(
         }
         // two deciders clicking the same person at once may both kick; only the one that deletes the roster row records it
         if (!members.remove(chatId, userId)) return alert(T.ALREADY_REMOVED)
+        sessions.delete(userId, chatId) // a form still open must not end in an approval for someone gone
         val now = clock.instant()
         subs.create(chatId, userId, null, profile ?: Profile(name, null), null, Status.REMOVED, now, Kind.CHECK, adminId, now)
         bot.answerCallback(callbackId)

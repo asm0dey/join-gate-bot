@@ -60,8 +60,8 @@ class ReviewService(
         if (!subs.decide(s.id, status, adminId, clock.instant())) return alreadyDecided()
         var revertAlert = T.TRY_AGAIN
         val result = when {
-            // approving a check needs no Telegram call: the member is already in
-            check && status == Status.APPROVED -> Decision.OK
+            // approving a check needs no Telegram call: the member is already in, unless removed since they answered
+            check && status == Status.APPROVED -> if (members.known(s.chatId, s.userId)) Decision.OK else Decision.GONE
             check -> when (bot.removeMember(s.chatId, s.userId)) {
                 Kick.OK -> Decision.OK
                 Kick.GONE -> Decision.GONE

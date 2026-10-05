@@ -4,6 +4,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import java.time.Duration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -330,6 +331,15 @@ class CheckServiceTest : StringSpec({
         s.answers.shouldBeNull()
         s.formVersion.shouldBeNull()
         e.tg.edits.single() shouldBe EditMsg(ADMIN, 900, "list", listOf(removeButton("id 7", 7)))
+    }
+
+    "Remove drops the person's open form session" {
+        val e = CheckEnv("cs-remove-session")
+        e.member(U, profile = Profile("Bob", "bob"))
+        e.flow.startMember(CHAT, U, ann, "en", Kind.CHECK)
+        e.sessions.get(U, CHAT) shouldNotBe null
+        e.svc.onRemoveButton(ADMIN, "cb", "k|$CHAT|$U", 900, "list", emptyList())
+        e.sessions.get(U, CHAT).shouldBeNull()
     }
 
     "Remove refuses passed, pending and already removed" {

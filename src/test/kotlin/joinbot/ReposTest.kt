@@ -200,6 +200,18 @@ class ReposTest : StringSpec({
         subs.get(subs.create(1, 2, 1, p, null, Status.PENDING, now))!!.kind shouldBe Kind.JOIN
     }
 
+    "migrate onto an existing row merges overlapping members and moves an open recheck" {
+        val db = testDb("migrate overlap"); val groups = GroupRepo(db)
+        val members = MemberRepo(db); val checks = CheckRepo(db)
+        groups.upsert(-100, "g", true); groups.upsert(-200, "g2", true)
+        members.pass(-100, 1, now); members.seen(-200, 1); members.seen(-100, 2); members.seen(-200, 3)
+        checks.open(-100, now, 9, now); checks.addMessage(-100, 5); checks.notice(-100, 9, false)
+        groups.migrate(-100, -200, SessionRepo(db, testCrypto())) shouldBe true
+        members.count(-100) shouldBe 0; members.count(-200) shouldBe 3
+        members.passedAt(-200, 1) shouldBe now
+        checks.get(-100) shouldBe null; checks.messages(-200) shouldBe listOf(5L); checks.undelivered(9) shouldBe listOf(-200L)
+    }
+
     "migrate moves members and the check" {
         val db = testDb("migrate moves members"); val groups = GroupRepo(db)
         val members = MemberRepo(db); val checks = CheckRepo(db)

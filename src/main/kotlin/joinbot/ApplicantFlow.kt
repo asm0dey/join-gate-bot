@@ -184,7 +184,7 @@ class ApplicantFlow(
         sessions.delete(s.userId, s.chatId)
         // a Check or Update has no join request to decline
         if (s.kind != Kind.JOIN) {
-            bot.sendText(s.userId, Texts.t(s.lang, T.CHECK_FORM_CLOSED))
+            bot.sendText(s.userId, Texts.t(s.lang, if (s.kind == Kind.UPDATE) T.UPDATE_FORM_CLOSED else T.CHECK_FORM_CLOSED))
             return
         }
         try {
