@@ -1,6 +1,6 @@
 services:
   join-gate-bot:
-    image: ghcr.io/asm0dey/join-gate-bot:latest
+    image: ghcr.io/asm0dey/join-gate-bot:latest@sha256:920a7c681266f4cc3d72a8027d13b15fa32100aff28c59cbb8cd8f23b5f26708
     env_file: .env
     ports:
       # loopback only: the HTTPS reverse proxy in front of the Mini App reaches it here
