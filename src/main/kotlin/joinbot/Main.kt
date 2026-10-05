@@ -72,7 +72,9 @@ suspend fun main(): Unit = coroutineScope {
     Registry.flow = flow
     Registry.review = review
     Registry.registry = GroupRegistry(groups, sessions, subs, users, review, flow, bot)
-    Registry.roster = Roster(members)
+    val roster = Roster(members)
+    Registry.roster = roster
+    Registry.checks = CheckService(groups, forms, subs, members, CheckRepo(db), sessions, users, admins, flow, roster, bot, clock)
     Registry.users = users
     Registry.bot = bot
 

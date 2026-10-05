@@ -27,7 +27,8 @@ private val log = LoggerFactory.getLogger("joinbot.Telegram")
 // Every Telegram call the services make. Plain text only: parse_mode is never set, so admin- and user-written
 // text needs no escaping. Only a refused send logs, and only Telegram's reason.
 
-data class Button(val text: String, val data: String)
+/** A callback button, or a link button when [url] is set ([data] is then unused). */
+data class Button(val text: String, val data: String = "", val url: String? = null)
 
 typealias Keyboard = List<List<Button>>
 
@@ -133,7 +134,7 @@ suspend fun TelegramBot.sendFile(chatId: Long, fileName: String, bytes: ByteArra
 }
 
 private fun InlineKeyboardMarkupBuilder.rows(buttons: Keyboard) =
-    buttons.forEach { row -> row.forEach { it.text callback it.data }; br() }
+    buttons.forEach { row -> row.forEach { if (it.url != null) it.text url it.url else it.text callback it.data }; br() }
 
 /** A thrown transport error becomes a Failure-shaped null; cancellation still propagates. */
 private suspend fun <T> call(block: suspend () -> Response<T>): Response<T>? = try {

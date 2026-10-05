@@ -8,6 +8,7 @@ object Registry {
     lateinit var review: ReviewService
     lateinit var registry: GroupRegistry
     lateinit var roster: Roster
+    lateinit var checks: CheckService
     lateinit var users: BotUserRepo
     lateinit var bot: TelegramBot
 }

@@ -8,6 +8,7 @@ import java.util.Locale
 //   DECIDED_BY_APPROVED(name), DECIDED_BY_REJECTED(name), ALREADY_DECIDED(name)
 //   REVIEW_HEADER(applicantName, groupTitle), CHECK_HEADER(applicantName, groupTitle), UPDATE_HEADER(applicantName, groupTitle), REVIEW_UNREACHABLE(applicantName)
 //   DECIDED_BY_REMOVED(name), CHECK_APPROVED_USER(groupTitle), CHECK_REMOVED_USER(groupTitle)
+//   REMIND_POST(date), REMIND_KNOWS(known: Int, total: Int, groupTitle), REMIND_POST_FAILED(groupTitle), OFFER_UPDATE(groupTitle)
 //   INVALID_TOO_FEW(min: Int), INVALID_TOO_MANY(max: Int), MULTI_EXACT(n: Int), MULTI_RANGE(min: Int, max: Int), MULTI_UP_TO(max: Int)
 // AN_ADMIN is the decider name when they are no longer an admin.
 // Always formatted, so a forgotten arg throws. Avoid a literal percent sign in any text.
@@ -21,6 +22,8 @@ enum class T {
     MANUAL_REVIEW, REVIEW_SUSPENDED, GROUP_HANDOFF, MULTI_EXACT, MULTI_RANGE, MULTI_UP_TO,
     FORM_FOR, QUEUED, CHECK_FORM_CLOSED, UPDATE_SAVED, FORM_CLOSED,
     CHECK_HEADER, UPDATE_HEADER, REMOVE, DECIDED_BY_REMOVED, CHECK_APPROVED_USER, CHECK_REMOVED_USER, NO_BAN_RIGHT,
+    REMIND_POST, FILL_FORM, REMIND_KNOWS, REMIND_BAD_DURATION, REMIND_NO_FORM, REMIND_NO_BAN, REMIND_ANONYMOUS, REMIND_POST_FAILED,
+    CHECK_ENDED, NOT_IN_GROUP, ADMINS_EXEMPT, CHECK_PENDING, OFFER_UPDATE, YES_UPDATE, UPDATE_LIST,
 }
 
 private val en = mapOf(
@@ -83,6 +86,21 @@ private val en = mapOf(
     T.CHECK_APPROVED_USER to "You're all set in %s.",
     T.CHECK_REMOVED_USER to "The admins removed you from %s. You can ask to join again.",
     T.NO_BAN_RIGHT to "The bot can't remove members: give it the Ban users right.",
+    T.REMIND_POST to "Members who haven't filled the join form yet: please do it by %s.",
+    T.FILL_FORM to "Fill the form",
+    T.REMIND_KNOWS to "The bot knows %d of %d members of %s.",
+    T.REMIND_BAD_DURATION to "Use a duration from 1h to 365d, like 7d or 48h.",
+    T.REMIND_NO_FORM to "This group has no form yet.",
+    T.REMIND_NO_BAN to "I need the Ban users right to run a check.",
+    T.REMIND_ANONYMOUS to "Anonymous admins can't start a check; post as yourself.",
+    T.REMIND_POST_FAILED to "I couldn't post the check message in %s.",
+    T.CHECK_ENDED to "This check has ended.",
+    T.NOT_IN_GROUP to "You're not in this group.",
+    T.ADMINS_EXEMPT to "Admins don't need to fill the form.",
+    T.CHECK_PENDING to "Your answers are waiting for the deciders' review.",
+    T.OFFER_UPDATE to "You've already filled the form for %s. Want to update your answers?",
+    T.YES_UPDATE to "Yes, update",
+    T.UPDATE_LIST to "You can update your answers for:",
 )
 
 private val ru = mapOf(
@@ -145,6 +163,21 @@ private val ru = mapOf(
     T.CHECK_APPROVED_USER to "Всё в порядке, вы остаётесь в %s.",
     T.CHECK_REMOVED_USER to "Администраторы исключили вас из %s. Можно подать заявку снова.",
     T.NO_BAN_RIGHT to "Бот не может исключать участников: дайте ему право «Блокировать пользователей».",
+    T.REMIND_POST to "Участники, которые ещё не заполнили анкету группы: пожалуйста, заполните её до %s.",
+    T.FILL_FORM to "Заполнить анкету",
+    T.REMIND_KNOWS to "Бот знает %d из %d участников %s.",
+    T.REMIND_BAD_DURATION to "Укажите срок от 1h до 365d, например 7d или 48h.",
+    T.REMIND_NO_FORM to "У этой группы пока нет анкеты.",
+    T.REMIND_NO_BAN to "Чтобы провести проверку, мне нужно право «Блокировать пользователей».",
+    T.REMIND_ANONYMOUS to "Анонимные администраторы не могут начать проверку; напишите от своего имени.",
+    T.REMIND_POST_FAILED to "Не удалось опубликовать сообщение о проверке в %s.",
+    T.CHECK_ENDED to "Эта проверка завершена.",
+    T.NOT_IN_GROUP to "Вы не состоите в этой группе.",
+    T.ADMINS_EXEMPT to "Администраторам не нужно заполнять анкету.",
+    T.CHECK_PENDING to "Ваши ответы ждут решения администраторов.",
+    T.OFFER_UPDATE to "Вы уже заполнили анкету для %s. Хотите обновить ответы?",
+    T.YES_UPDATE to "Да, обновить",
+    T.UPDATE_LIST to "Вы можете обновить ответы для:",
 )
 
 object Texts {

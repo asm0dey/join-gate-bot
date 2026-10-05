@@ -30,7 +30,7 @@ data class EditMsg(val chatId: Long, val messageId: Long, val text: String, val 
  * A fake Telegram Bot API behind a real [bot], for service tests; safe for concurrent coroutines.
  * Each request is parsed back into records. Calls read like
  * "send 5 <text>", "edit 5 12 <text>", "answer cb1 <text> alert", "approve -100 5", "decline -100 5", "doc 5 <name>".
- * Admin lookups are not in [calls]; they go to [adminsCalls] (the chat ids looked up).
+ * A URL button is recorded with its url as [Button.data]. Admin lookups are not in [calls]; they go to [adminsCalls] (the chat ids looked up).
  */
 class FakeTelegram {
     val calls: MutableList<String> = Collections.synchronizedList(mutableListOf())
@@ -132,7 +132,7 @@ class FakeTelegram {
             calls += "unban ${j.long("chat_id")} ${j.long("user_id")}"
             ok("true")
         }
-        "getMe" -> ok("""{"id":0,"is_bot":true,"first_name":"Fake","username":"fakebot"}""")
+        "getMe" -> ok("""{"id":0,"is_bot":true,"first_name":"Fake","username":"joinbot"}""")
         else -> error("FakeTelegram: unexpected method $method")
     }
 
@@ -179,7 +179,7 @@ private fun JsonObject.long(key: String) = str(key)!!.toLong()
 
 private fun JsonObject.buttons(): Keyboard =
     get("reply_markup")?.jsonObject?.get("inline_keyboard")?.jsonArray?.map { row ->
-        row.jsonArray.map { Button(it.jsonObject.str("text")!!, it.jsonObject.str("callback_data")!!) }
+        row.jsonArray.map { Button(it.jsonObject.str("text")!!, it.jsonObject.str("callback_data") ?: it.jsonObject.str("url")!!) }
     } ?: emptyList()
 
 private fun Admin.json() =

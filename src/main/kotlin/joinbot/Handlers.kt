@@ -33,14 +33,27 @@ private inline fun guarded(what: String, block: () -> Unit) {
 
 private fun ProcessedUpdate.isPrivate() = (this as? MessageUpdate)?.message?.chat?.type == ChatType.Private
 
-/** Resumes an open form, else hands an admin their pending reviews, else explains how to join. */
+private fun User.profile() = Profile(listOfNotNull(firstName, lastName).joinToString(" "), username)
+
+private val START_CHECK = Regex("""/start r(-?\d+)""")
+
+// One place parses `/remind`: no @CommandHandler, so `/remind@botname` and the argument need no second parser.
+private val REMIND = Regex("""/remind(@\w+)?(?:\s+(\S+))?\s*""")
+
+/**
+ * `/start r<chatId>` enters that group's check. Plain `/start` resumes an open form, else hands an admin their
+ * pending reviews, else offers updates to a passed member, else explains how to join.
+ */
 @CommandHandler(["/start"])
 suspend fun start(user: User, update: ProcessedUpdate): Unit = guarded("start") {
     if (!update.isPrivate()) return
     val lang = user.languageCode
     Registry.users.started(user.id, lang)
+    val chatId = START_CHECK.matchEntire((update as MessageUpdate).message.text.orEmpty())?.groupValues?.get(1)?.toLongOrNull()
+    if (chatId != null) return Registry.checks.enter(chatId, user.profile(), user.id, lang)
     if (Registry.flow.onStart(user.id, lang)) return
     if (Registry.review.deliverPending(user.id) > 0) return
+    if (Registry.checks.offerUpdates(user.id, lang)) return
     Registry.bot.sendText(user.id, Texts.t(lang, T.HOW_TO_JOIN))
 }
 
@@ -48,8 +61,7 @@ suspend fun start(user: User, update: ProcessedUpdate): Unit = guarded("start") 
 suspend fun joinRequest(update: ChatJoinRequestUpdate): Unit = guarded("join request") {
     val r = update.chatJoinRequest
     val u = r.from
-    val profile = Profile(listOfNotNull(u.firstName, u.lastName).joinToString(" "), u.username)
-    Registry.flow.onJoinRequest(r.chat.id, u.id, r.userChatId, profile, u.languageCode)
+    Registry.flow.onJoinRequest(r.chat.id, u.id, r.userChatId, u.profile(), u.languageCode)
 }
 
 @UpdateHandler([UpdateType.MY_CHAT_MEMBER])
@@ -91,7 +103,7 @@ suspend fun chatMigrated(update: ProcessedUpdate): Unit = guarded("migration") {
     Registry.registry.onMigrated(m.chat.id, m.migrateToChatId ?: return)
 }
 
-/** Everything no command matched: form answers in private, and every button. Group chatter only feeds the roster. */
+/** Everything no command matched: form answers in private, and every button. In groups, `/remind`; other chatter only feeds the roster. */
 @UnprocessedHandler
 suspend fun fallback(update: ProcessedUpdate): Unit = guarded("update") {
     when (update) {
@@ -100,6 +112,10 @@ suspend fun fallback(update: ProcessedUpdate): Unit = guarded("update") {
             if (m.chat.type == ChatType.Group || m.chat.type == ChatType.Supergroup) {
                 val from = m.from
                 if (from != null && !from.isBot && m.senderChat == null) Registry.roster.seen(m.chat.id, from.id)
+                val remind = REMIND.matchEntire(m.text ?: return) ?: return
+                // an anonymous admin posts as the group: from is GroupAnonymousBot, sender_chat the group
+                val anonymous = m.senderChat?.id == m.chat.id
+                Registry.checks.remind(m.chat.id, (from ?: return).id, anonymous, remind.groupValues[2].ifEmpty { null })
                 return
             }
             if (!update.isPrivate()) return
@@ -118,6 +134,8 @@ suspend fun fallback(update: ProcessedUpdate): Unit = guarded("update") {
                     Registry.flow.onCallback(q.from.id, q.id, data, q.from.languageCode, messageId)
 
                 data.startsWith("r|") -> Registry.review.onDecision(q.from.id, q.id, data)
+                data.startsWith("u|") ->
+                    Registry.checks.onUpdateButton(q.from.id, q.id, data, q.from.profile(), q.from.languageCode)
                 else -> Registry.bot.answerCallback(q.id)
             }
         }

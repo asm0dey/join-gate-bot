@@ -1,5 +1,6 @@
 package joinbot
 
+import eu.vendeli.tgbot.TelegramBot
 import eu.vendeli.tgbot.annotations.internal.KtGramInternal
 import eu.vendeli.tgbot.types.common.Update
 import eu.vendeli.tgbot.types.component.ChatJoinRequestUpdate
@@ -51,9 +52,11 @@ private class HandlerEnv(name: String) {
     val subs = SubmissionRepo(db, testCrypto())
     val users = BotUserRepo(db)
     val members = MemberRepo(db)
-    val review = ReviewService(subs, forms, groups, users, members, AdminCheck(tg.bot, clock, 0), tg.bot, clock)
+    val admins = AdminCheck(tg.bot, clock, 0)
+    val review = ReviewService(subs, forms, groups, users, members, admins, tg.bot, clock)
     val sessions = SessionRepo(db, testCrypto())
     val flow = ApplicantFlow(groups, forms, sessions, subs, users, review, tg.bot, clock)
+    val checks = CheckRepo(db)
 
     init {
         Registry.bot = tg.bot
@@ -62,11 +65,16 @@ private class HandlerEnv(name: String) {
         Registry.review = review
         Registry.flow = flow
         Registry.registry = GroupRegistry(groups, sessions, subs, users, review, flow, tg.bot)
+        Registry.checks = CheckService(groups, forms, subs, members, checks, sessions, users, admins, flow, Registry.roster, tg.bot, clock)
         groups.upsert(CHAT, "Club", true)
         forms.save(CHAT, Form("Hi", listOf(Text("q1", "Why?"), Text("q2", "Where?"))), 0, 9, clock.instant())
         tg.adminsOf[CHAT] = listOf(Admin(ADMIN, "Boss", false, true))
     }
 }
+
+/** Dispatches through vendeli's generated activities with Main's command parsing, as polling does. */
+private val router = TelegramBot("000:fake-token-for-tests", "joinbot") { commandParsing { restrictSpacesInCommands = true } }
+private suspend fun route(u: ProcessedUpdate) = router.update.handle(u)
 
 class HandlersTest : StringSpec({
     "join request update reaches the flow" {
@@ -225,5 +233,43 @@ class HandlersTest : StringSpec({
         chatMigrated(migrate) // a repeat is a no-op
         e.groups.get(-1009)!!.title shouldBe "Club"
         e.tg.calls.filter { it.startsWith("send $CHAT") || it.startsWith("send -1009") }.shouldBeEmpty()
+    }
+
+    "/start with a check payload reaches enter" {
+        val e = HandlerEnv("h-start-check")
+        e.checks.open(CHAT, e.clock.instant().plusSeconds(3600), ADMIN, e.clock.instant())
+        e.tg.members[CHAT to U] = "member"
+        route(message(U, "/start r-100"))
+        e.tg.sent.map { it.chatId to it.text } shouldBe listOf(U to Texts.t("en", T.FORM_FOR, "Club"), U to "Hi", U to "Why?")
+        e.sessions.get(U, CHAT)!!.kind shouldBe Kind.CHECK
+    }
+
+    "/remind@joinbot 3d in the group starts a check" {
+        val e = HandlerEnv("h-remind")
+        e.tg.adminsOf[CHAT] = listOf(Admin(U, "Ann", false, true, true), Admin(0, "Bot", true, true, true))
+        route(message(CHAT, "/remind@joinbot 3d"))
+        e.checks.openCheck(CHAT)!!.deadline shouldBe e.clock.instant().plus(java.time.Duration.ofDays(3))
+        e.tg.sent.first().buttons.flatten().map { it.data } shouldBe listOf("https://t.me/joinbot?start=r-100")
+    }
+
+    "/remind from an anonymous admin gets an explanation" {
+        val e = HandlerEnv("h-remind-anon")
+        route(upd(
+            """{"update_id":8,"message":{"message_id":9,"date":1,"chat":${chat(CHAT)},"sender_chat":${chat(CHAT)},""" +
+                """"from":{"id":1087968824,"is_bot":true,"first_name":"Group","username":"GroupAnonymousBot"},"text":"/remind"}}""",
+        ))
+        e.tg.sent.map { it.chatId to it.text } shouldBe listOf(CHAT to Texts.t(null, T.REMIND_ANONYMOUS))
+        e.checks.get(CHAT) shouldBe null
+    }
+
+    "plain /start offers updates for passed groups" {
+        val e = HandlerEnv("h-start-update")
+        e.members.pass(CHAT, U, e.clock.instant())
+        route(message(U, "/start"))
+        e.tg.sent.single() shouldBe SentMsg(U, Texts.t("en", T.UPDATE_LIST), listOf(listOf(Button("Club", "u|$CHAT"))))
+        e.tg.members[CHAT to U] = "member"
+        fallback(callback(U, "u|$CHAT"))
+        e.tg.calls.filter { it.startsWith("answer") } shouldBe listOf("answer cb ")
+        e.sessions.get(U, CHAT)!!.kind shouldBe Kind.UPDATE
     }
 })

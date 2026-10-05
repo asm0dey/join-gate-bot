@@ -22,6 +22,10 @@ private val expectedArgs: Map<T, Array<Any>> = mapOf(
     T.DECIDED_BY_REMOVED to arrayOf("Bob"),
     T.CHECK_APPROVED_USER to arrayOf("Group"),
     T.CHECK_REMOVED_USER to arrayOf("Group"),
+    T.REMIND_POST to arrayOf("2026-01-08 00:00 UTC"),
+    T.REMIND_KNOWS to arrayOf(2, 10, "Group"),
+    T.REMIND_POST_FAILED to arrayOf("Group"),
+    T.OFFER_UPDATE to arrayOf("Group"),
     T.FORM_FOR to arrayOf("Club"),
     T.QUEUED to arrayOf("Club"),
     T.REVIEW_UNREACHABLE to arrayOf("Bob"),
@@ -148,7 +152,7 @@ class TelegramTest : StringSpec({
     "memberCount and botUsername" {
         val fake = FakeTelegram().apply { memberCount = 42 }
         fake.bot.memberCount(-100) shouldBe 42
-        fake.bot.botUsername() shouldBe "fakebot"
+        fake.bot.botUsername() shouldBe "joinbot"
         FakeTelegram().bot.memberCount(-100) shouldBe null
     }
 })
