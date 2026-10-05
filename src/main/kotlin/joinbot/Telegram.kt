@@ -112,12 +112,9 @@ suspend fun TelegramBot.memberCount(chatId: Long): Int? =
 suspend fun TelegramBot.removeMember(chatId: Long, userId: Long): Kick {
     val info = memberInfo(chatId, userId) ?: return Kick.TRANSIENT
     if (info.membership == Membership.GONE) return Kick.GONE
-    when (val r = call { banChatMember(userId).sendReturning(chatId, this).await() }) {
-        is Response.Success -> {}
-        // ponytail: an admin promoted mid-check also lands in TRANSIENT (its ban fails with another reason)
-        is Response.Failure -> return if (r.description.orEmpty().contains("not enough rights")) Kick.NO_RIGHT else Kick.TRANSIENT
-        null -> return Kick.TRANSIENT
-    }
+    val ban = call { banChatMember(userId).sendReturning(chatId, this).await() } ?: return Kick.TRANSIENT
+    // ponytail: an admin promoted mid-check also lands in TRANSIENT (its ban fails with another reason)
+    if (ban is Response.Failure) return if (ban.description.orEmpty().contains("not enough rights")) Kick.NO_RIGHT else Kick.TRANSIENT
     if (call { unbanChatMember(userId, onlyIfBanned = true).sendReturning(chatId, this).await() } !is Response.Success) {
         log.warn("unban after removal failed")
     }

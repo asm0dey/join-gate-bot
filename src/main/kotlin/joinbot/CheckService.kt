@@ -210,7 +210,7 @@ class CheckService(
         if (subs.pendingCheck(chatId, userId) != null) return alert(T.PENDING_SINCE, name)
         if (!members.known(chatId, userId)) return alert(T.ALREADY_REMOVED)
         when (bot.removeMember(chatId, userId)) {
-            Kick.OK, Kick.GONE -> {}
+            Kick.OK, Kick.GONE -> { /* out of the group either way: record the removal below */ }
             Kick.NO_RIGHT -> return alert(T.NO_BAN_RIGHT)
             Kick.TRANSIENT -> return alert(T.TRY_AGAIN)
         }

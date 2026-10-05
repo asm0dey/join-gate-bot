@@ -6,6 +6,7 @@ import eu.vendeli.tgbot.annotations.UpdateHandler
 import eu.vendeli.tgbot.types.User
 import eu.vendeli.tgbot.types.chat.ChatMember
 import eu.vendeli.tgbot.types.chat.ChatType
+import eu.vendeli.tgbot.types.common.CallbackQuery
 import eu.vendeli.tgbot.types.component.CallbackQueryUpdate
 import eu.vendeli.tgbot.types.component.ChatJoinRequestUpdate
 import eu.vendeli.tgbot.types.component.ChatMemberUpdate
@@ -118,6 +119,26 @@ private suspend fun groupMessage(m: Message) {
     )
 }
 
+/** Every button, routed by the prefix of its callback data. */
+private suspend fun button(q: CallbackQuery) {
+    val data = q.data.orEmpty()
+    val messageId = q.message?.messageId
+    when {
+        data.startsWith("f|") && messageId != null ->
+            Registry.flow.onCallback(q.from.id, q.id, data, q.from.languageCode, messageId)
+
+        data.startsWith("r|") -> Registry.review.onDecision(q.from.id, q.id, data)
+        data.startsWith("u|") ->
+            Registry.checks.onUpdateButton(q.from.id, q.id, data, q.from.profile(), q.from.languageCode)
+        data.startsWith("k|") && q.message is Message -> {
+            val m = q.message as Message
+            val keyboard = m.replyMarkup?.keyboard.orEmpty().map { row -> row.map { Button(it.text, it.callbackData.orEmpty()) } }
+            Registry.checks.onRemoveButton(q.from.id, q.id, data, m.messageId, m.text.orEmpty(), keyboard)
+        }
+        else -> Registry.bot.answerCallback(q.id)
+    }
+}
+
 /** Everything no command matched: form answers in private, and every button. In groups, `/remind`; other chatter only feeds the roster. */
 @UnprocessedHandler
 suspend fun fallback(update: ProcessedUpdate): Unit = guarded("update") {
@@ -132,25 +153,7 @@ suspend fun fallback(update: ProcessedUpdate): Unit = guarded("update") {
             }
         }
 
-        is CallbackQueryUpdate -> {
-            val q = update.callbackQuery
-            val data = q.data.orEmpty()
-            val messageId = q.message?.messageId
-            when {
-                data.startsWith("f|") && messageId != null ->
-                    Registry.flow.onCallback(q.from.id, q.id, data, q.from.languageCode, messageId)
-
-                data.startsWith("r|") -> Registry.review.onDecision(q.from.id, q.id, data)
-                data.startsWith("u|") ->
-                    Registry.checks.onUpdateButton(q.from.id, q.id, data, q.from.profile(), q.from.languageCode)
-                data.startsWith("k|") && q.message is Message -> {
-                    val m = q.message as Message
-                    val keyboard = m.replyMarkup?.keyboard.orEmpty().map { row -> row.map { Button(it.text, it.callbackData.orEmpty()) } }
-                    Registry.checks.onRemoveButton(q.from.id, q.id, data, m.messageId, m.text.orEmpty(), keyboard)
-                }
-                else -> Registry.bot.answerCallback(q.id)
-            }
-        }
+        is CallbackQueryUpdate -> button(update.callbackQuery)
 
         else -> {} // join requests and bot-status updates also land here after their @UpdateHandler
     }

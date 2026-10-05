@@ -34,7 +34,7 @@ export const api = {
   groups: () => call<Group[]>('GET', '/groups'),
   form: (id: number) => call<FormDto>('GET', `${g(id)}/form`),
   saveForm: (id: number, schema: Form, baseVersion: number) => call<{ version: number }>('PUT', `${g(id)}/form`, { schema, baseVersion }),
-  submissions: (id: number, status?: Status) => call<SubmissionRow[]>('GET', `${g(id)}/submissions${status ? `?status=${status}` : ''}`),
+  submissions: (id: number, status?: Status) => call<SubmissionRow[]>('GET', `${g(id)}/submissions` + (status ? `?status=${status}` : '')),
   submission: (id: number, sid: number) => call<SubmissionDetail>('GET', `${g(id)}/submissions/${sid}`),
   remove: (id: number, sid: number) => call<void>('DELETE', `${g(id)}/submissions/${sid}`),
   exportCsv: (id: number) => call<void>('POST', `${g(id)}/export`),
