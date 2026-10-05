@@ -8,7 +8,9 @@ import eu.vendeli.tgbot.types.chat.ChatMember
 import eu.vendeli.tgbot.types.chat.ChatType
 import eu.vendeli.tgbot.types.component.CallbackQueryUpdate
 import eu.vendeli.tgbot.types.component.ChatJoinRequestUpdate
+import eu.vendeli.tgbot.types.component.ChatMemberUpdate
 import eu.vendeli.tgbot.types.component.MessageKind
+import eu.vendeli.tgbot.types.component.MessageReactionUpdate
 import eu.vendeli.tgbot.types.component.MessageUpdate
 import eu.vendeli.tgbot.types.component.MyChatMemberUpdate
 import eu.vendeli.tgbot.types.component.ProcessedUpdate
@@ -58,6 +60,27 @@ suspend fun botStatus(update: MyChatMemberUpdate): Unit = guarded("bot status") 
     Registry.registry.onBotStatus(m.chat.id, m.chat.title.orEmpty(), admin != null, admin?.canInviteUsers == true)
 }
 
+/** Join and leave keep the roster current; bots are never members to check. */
+@UpdateHandler([UpdateType.CHAT_MEMBER])
+suspend fun memberChanged(update: ChatMemberUpdate): Unit = guarded("member change") {
+    val m = update.chatMember
+    val u = m.newChatMember.user
+    if (u.isBot) return
+    when (val n = m.newChatMember) {
+        is ChatMember.Left, is ChatMember.Banned -> Registry.roster.left(m.chat.id, u.id)
+        is ChatMember.Restricted -> if (n.isMember) Registry.roster.seen(m.chat.id, u.id) else Registry.roster.left(m.chat.id, u.id)
+        else -> Registry.roster.seen(m.chat.id, u.id)
+    }
+}
+
+/** A reaction shows a person is there; anonymous ones (actor_chat) carry no user. */
+@UpdateHandler([UpdateType.MESSAGE_REACTION])
+suspend fun reacted(update: MessageReactionUpdate): Unit = guarded("reaction") {
+    val r = update.messageReaction
+    val u = r.user ?: return
+    if (!u.isBot) Registry.roster.seen(r.chat.id, u.id)
+}
+
 /**
  * Telegram announces a group's upgrade to a supergroup as an ordinary message in the old chat carrying
  * `migrate_to_chat_id`; there is no dedicated update type. Nothing is said back.
@@ -68,11 +91,17 @@ suspend fun chatMigrated(update: ProcessedUpdate): Unit = guarded("migration") {
     Registry.registry.onMigrated(m.chat.id, m.migrateToChatId ?: return)
 }
 
-/** Everything no command matched: form answers in private, and every button. Group chatter is ignored. */
+/** Everything no command matched: form answers in private, and every button. Group chatter only feeds the roster. */
 @UnprocessedHandler
 suspend fun fallback(update: ProcessedUpdate): Unit = guarded("update") {
     when (update) {
         is MessageUpdate -> {
+            val m = update.message
+            if (m.chat.type == ChatType.Group || m.chat.type == ChatType.Supergroup) {
+                val from = m.from
+                if (from != null && !from.isBot && m.senderChat == null) Registry.roster.seen(m.chat.id, from.id)
+                return
+            }
             if (!update.isPrivate()) return
             val u = update.user
             if (!Registry.flow.onMessage(u.id, update.message.text, u.languageCode)) {

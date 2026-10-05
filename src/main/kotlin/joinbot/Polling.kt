@@ -42,11 +42,12 @@ import org.slf4j.LoggerFactory
 private val log = LoggerFactory.getLogger("joinbot.Polling")
 
 /**
- * Telegram sends chat_join_request and my_chat_member only when they are asked for by name,
+ * Telegram sends chat_join_request, my_chat_member, chat_member and message_reaction only when they are asked for by name,
  * so this list is load-bearing: drop one and that update kind stops arriving, silently.
  */
 internal val ALLOWED_UPDATES = listOf(
     UpdateType.MESSAGE, UpdateType.CALLBACK_QUERY, UpdateType.CHAT_JOIN_REQUEST, UpdateType.MY_CHAT_MEMBER,
+    UpdateType.CHAT_MEMBER, UpdateType.MESSAGE_REACTION,
 )
 
 /** Mirrors vendeli 9.6's internal `serde`, which its own getUpdates decodes with. */

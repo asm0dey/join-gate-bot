@@ -66,11 +66,13 @@ suspend fun main(): Unit = coroutineScope {
         throwExOnActionsFailure = false
     }
     val admins = AdminCheck(bot, clock, cfg.botToken.substringBefore(':').toLong())
-    val review = ReviewService(subs, forms, groups, users, admins, bot, clock)
+    val members = MemberRepo(db)
+    val review = ReviewService(subs, forms, groups, users, members, admins, bot, clock)
     val flow = ApplicantFlow(groups, forms, sessions, subs, users, review, bot, clock)
     Registry.flow = flow
     Registry.review = review
     Registry.registry = GroupRegistry(groups, sessions, subs, users, review, flow, bot)
+    Registry.roster = Roster(members)
     Registry.users = users
     Registry.bot = bot
 

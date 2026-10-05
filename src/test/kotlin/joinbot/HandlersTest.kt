@@ -3,6 +3,8 @@ package joinbot
 import eu.vendeli.tgbot.annotations.internal.KtGramInternal
 import eu.vendeli.tgbot.types.common.Update
 import eu.vendeli.tgbot.types.component.ChatJoinRequestUpdate
+import eu.vendeli.tgbot.types.component.ChatMemberUpdate
+import eu.vendeli.tgbot.types.component.MessageReactionUpdate
 import eu.vendeli.tgbot.types.component.MessageUpdate
 import eu.vendeli.tgbot.types.component.MyChatMemberUpdate
 import eu.vendeli.tgbot.types.component.ProcessedUpdate
@@ -48,13 +50,15 @@ private class HandlerEnv(name: String) {
     val forms = FormRepo(db)
     val subs = SubmissionRepo(db, testCrypto())
     val users = BotUserRepo(db)
-    val review = ReviewService(subs, forms, groups, users, AdminCheck(tg.bot, clock, 0), tg.bot, clock)
+    val members = MemberRepo(db)
+    val review = ReviewService(subs, forms, groups, users, members, AdminCheck(tg.bot, clock, 0), tg.bot, clock)
     val sessions = SessionRepo(db, testCrypto())
     val flow = ApplicantFlow(groups, forms, sessions, subs, users, review, tg.bot, clock)
 
     init {
         Registry.bot = tg.bot
         Registry.users = users
+        Registry.roster = Roster(members)
         Registry.review = review
         Registry.flow = flow
         Registry.registry = GroupRegistry(groups, sessions, subs, users, review, flow, tg.bot)
@@ -90,13 +94,56 @@ class HandlersTest : StringSpec({
     }
 
     "polling asks Telegram for every update kind a handler needs" {
-        ALLOWED_UPDATES.toSet() shouldBe setOf(UpdateType.MESSAGE, UpdateType.CALLBACK_QUERY, UpdateType.CHAT_JOIN_REQUEST, UpdateType.MY_CHAT_MEMBER)
+        ALLOWED_UPDATES.toSet() shouldBe setOf(
+            UpdateType.MESSAGE, UpdateType.CALLBACK_QUERY, UpdateType.CHAT_JOIN_REQUEST, UpdateType.MY_CHAT_MEMBER,
+            UpdateType.CHAT_MEMBER, UpdateType.MESSAGE_REACTION,
+        )
     }
 
     "group text is ignored" {
         val e = HandlerEnv("h-group")
         fallback(message(CHAT, "hello"))
         e.tg.calls.shouldBeEmpty()
+    }
+
+    "chat_member join adds, leave removes" {
+        val e = HandlerEnv("h-chat-member")
+        fun change(status: String) = upd(
+            """{"update_id":4,"chat_member":{"chat":${chat(CHAT)},"from":${user(ADMIN)},"date":1,""" +
+                """"old_chat_member":{"status":"left","user":${user(U)}},""" +
+                """"new_chat_member":{"status":"$status","user":${user(U)}}}}""",
+        ) as ChatMemberUpdate
+        memberChanged(change("member"))
+        e.members.known(CHAT, U) shouldBe true
+        memberChanged(change("left"))
+        e.members.known(CHAT, U) shouldBe false
+    }
+
+    "group message from a person is seen; from a bot is not" {
+        val e = HandlerEnv("h-seen-msg")
+        fallback(message(CHAT, "hello"))
+        e.members.known(CHAT, U) shouldBe true
+        fallback(upd(
+            """{"update_id":5,"message":{"message_id":8,"date":1,"chat":${chat(CHAT)},""" +
+                """"from":{"id":77,"is_bot":true,"first_name":"Bot"},"text":"hi"}}""",
+        ))
+        e.members.known(CHAT, 77) shouldBe false
+        e.tg.calls.shouldBeEmpty()
+    }
+
+    "reaction with a user is seen; anonymous reaction (actor_chat) is not" {
+        val e = HandlerEnv("h-reaction")
+        reacted(upd(
+            """{"update_id":6,"message_reaction":{"chat":${chat(CHAT)},"message_id":7,"user":${user(U)},"date":1,""" +
+                """"old_reaction":[],"new_reaction":[{"type":"emoji","emoji":"👍"}]}}""",
+        ) as MessageReactionUpdate)
+        e.members.known(CHAT, U) shouldBe true
+        reacted(upd(
+            """{"update_id":7,"message_reaction":{"chat":${chat(CHAT)},"message_id":7,"actor_chat":${chat(CHAT)},"date":1,""" +
+                """"old_reaction":[],"new_reaction":[{"type":"emoji","emoji":"👍"}]}}""",
+        ) as MessageReactionUpdate)
+        e.members.known(CHAT, 0) shouldBe false
+        e.members.count(CHAT) shouldBe 1
     }
 
     "/start from a stranger explains how to join" {

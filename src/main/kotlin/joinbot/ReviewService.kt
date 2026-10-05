@@ -15,7 +15,7 @@ fun Submission.partial(form: Form?) = answers == null || form?.fields.orEmpty().
 
 /** Fans a submission out to the group's deciders and settles Approve/Reject clicks; the first click wins (spec C). */
 class ReviewService(
-    private val subs: SubmissionRepo, private val forms: FormRepo, private val groups: GroupRepo, private val users: BotUserRepo,
+    private val subs: SubmissionRepo, private val forms: FormRepo, private val groups: GroupRepo, private val users: BotUserRepo, private val members: MemberRepo,
     private val admins: AdminCheck, private val bot: TelegramBot, private val clock: Clock,
 ) {
     suspend fun submit(submissionId: Long) {
@@ -58,6 +58,7 @@ class ReviewService(
                 Status.WITHDRAWN
             }
         }
+        if (final == Status.APPROVED) members.pass(s.chatId, s.userId, clock.instant())
         bot.answerCallback(callbackId)
 
         val form = s.formVersion?.let { forms.version(s.chatId, it) }

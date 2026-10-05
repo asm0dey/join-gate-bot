@@ -7,6 +7,7 @@ object Registry {
     lateinit var flow: ApplicantFlow
     lateinit var review: ReviewService
     lateinit var registry: GroupRegistry
+    lateinit var roster: Roster
     lateinit var users: BotUserRepo
     lateinit var bot: TelegramBot
 }

@@ -25,7 +25,8 @@ private class Env(name: String) {
     val forms = FormRepo(db)
     val subs = SubmissionRepo(db, testCrypto())
     val users = BotUserRepo(db)
-    val review = ReviewService(subs, forms, groups, users, AdminCheck(tg.bot, clock, 0), tg.bot, clock)
+    val members = MemberRepo(db)
+    val review = ReviewService(subs, forms, groups, users, members, AdminCheck(tg.bot, clock, 0), tg.bot, clock)
 
     fun group(chat: Long = CHAT, vararg admins: Admin) {
         groups.upsert(chat, "Club$chat", true)
@@ -112,6 +113,15 @@ class ReviewServiceTest : StringSpec({
         e.tg.edits.single { it.chatId == 1L }.let { it.messageId shouldBe byAdmin[1]; it.text shouldEndWith Texts.t("en", T.DECIDED_BY_REJECTED, "Bob") }
         e.tg.edits.single { it.chatId == 2L }.text shouldEndWith Texts.t("ru", T.DECIDED_BY_REJECTED, "Bob")
         e.tg.sent.last().let { it.chatId shouldBe APPLICANT; it.text shouldBe Texts.t("ru", T.REJECTED_USER) }
+    }
+
+    "approving a join marks the applicant passed" {
+        val e = Env("approve-passes")
+        e.group(CHAT, admin(1))
+        val id = e.pending()
+        e.review.submit(id)
+        e.review.onDecision(1, "c1", "r|$id|a")
+        e.members.passedAt(CHAT, APPLICANT) shouldBe e.clock.instant()
     }
 
     "a decider who left the group is named neutrally" {

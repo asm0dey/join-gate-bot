@@ -18,7 +18,7 @@ private class PurgeEnv(name: String) {
     val sessions = SessionRepo(db, testCrypto())
     val subs = SubmissionRepo(db, testCrypto())
     val users = BotUserRepo(db)
-    val review = ReviewService(subs, FormRepo(db), groups, users, AdminCheck(tg.bot, clock, 0), tg.bot, clock)
+    val review = ReviewService(subs, FormRepo(db), groups, users, MemberRepo(db), AdminCheck(tg.bot, clock, 0), tg.bot, clock)
     val flow = ApplicantFlow(groups, FormRepo(db), sessions, subs, users, review, tg.bot, clock)
     val purge = Purge(sessions, flow, subs, groups, clock)
 
