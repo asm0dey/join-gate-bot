@@ -65,12 +65,17 @@ suspend fun main(): Unit = coroutineScope {
         // Failures come back as Response.Failure; Telegram.kt classifies them.
         throwExOnActionsFailure = false
     }
-    val admins = AdminCheck(bot, clock)
-    val review = ReviewService(subs, forms, groups, users, admins, bot, clock)
+    val admins = AdminCheck(bot, clock, cfg.botToken.substringBefore(':').toLong())
+    val members = MemberRepo(db)
+    val review = ReviewService(subs, forms, groups, users, members, admins, bot, clock)
     val flow = ApplicantFlow(groups, forms, sessions, subs, users, review, bot, clock)
     Registry.flow = flow
     Registry.review = review
-    Registry.registry = GroupRegistry(groups, sessions, subs, users, review, flow, bot)
+    val roster = Roster(members)
+    Registry.roster = roster
+    val checks = CheckService(groups, forms, subs, members, CheckRepo(db), sessions, users, admins, flow, roster, bot, clock)
+    Registry.checks = checks
+    Registry.registry = GroupRegistry(groups, sessions, subs, users, review, flow, checks, bot)
     Registry.users = users
     Registry.bot = bot
 
@@ -116,6 +121,7 @@ suspend fun main(): Unit = coroutineScope {
     }
 
     Purge(sessions, flow, subs, groups, clock).start(this)
+    checks.start(this)
 
     // getUpdates is refused while a webhook is set; best effort, polling's own errors cover the rest
     val unhooked = try {

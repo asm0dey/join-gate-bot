@@ -101,8 +101,27 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.6.0</version>
                 <configuration>
-                    <argLine>-Duser.timezone=UTC</argLine>
+                    <!-- @{argLine} carries JaCoCo's agent from prepare-agent -->
+                    <argLine>@{argLine} -Duser.timezone=UTC</argLine>
                 </configuration>
+            </plugin>
+
+            <!-- Coverage for SonarCloud: target/site/jacoco/jacoco.xml -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.15</version>
+                <executions>
+                    <execution>
+                        <goals><goal>prepare-agent</goal></goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals><goal>report</goal></goals>
+                        <configuration><formats><format>XML</format></formats></configuration>
+                    </execution>
+                </executions>
             </plugin>
 
             <plugin>

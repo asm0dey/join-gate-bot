@@ -23,7 +23,8 @@ import org.jetbrains.exposed.v1.jdbc.update
 import org.jetbrains.exposed.v1.jdbc.upsert
 
 @Serializable data class Profile(val name: String, val username: String?)
-enum class Status { PENDING, APPROVED, REJECTED, WITHDRAWN, EXPIRED }
+enum class Status { PENDING, APPROVED, REJECTED, WITHDRAWN, EXPIRED, REMOVED }
+enum class Kind { JOIN, CHECK, UPDATE }
 data class Group(val chatId: Long, val title: String, val active: Boolean, val retentionDays: Int, val nudgedAt: Instant?)
 // profile: submission.profile is NOT NULL, and submit/expiry happen long after the join request
 @Serializable data class SessionState(
@@ -32,10 +33,11 @@ data class Group(val chatId: Long, val title: String, val active: Boolean, val r
     val picks: Set<Int> = emptySet(),
     val otherMode: Boolean = false,
 )
-data class Session(val userId: Long, val chatId: Long, val formVersion: Int, val step: Int, val state: SessionState, val lang: String?, val touchedAt: Instant)
+data class Session(val userId: Long, val chatId: Long, val formVersion: Int, val step: Int, val state: SessionState, val lang: String?, val touchedAt: Instant, val kind: Kind = Kind.JOIN)
 data class Submission(
     val id: Long, val chatId: Long, val userId: Long, val formVersion: Int?, val profile: Profile,
     val answers: Map<String, String>?, val status: Status, val decidedBy: Long?, val decidedAt: Instant?, val createdAt: Instant,
+    val kind: Kind,
 )
 
 /** Step of a queued session (spec B6). */
@@ -86,6 +88,20 @@ class GroupRepo(private val db: Database) {
         Forms.update({ Forms.chatId eq oldId }) { it[chatId] = newId }
         sessions.moveChat(oldId, newId)
         Submissions.update({ Submissions.chatId eq oldId }) { it[chatId] = newId }
+        // a user on both rosters keeps the old row (a new-chat row can't be passed yet); the PK would clash otherwise
+        val oldUsers = Members.selectAll().where { Members.chatId eq oldId }.map { it[Members.userId] }
+        Members.deleteWhere { (Members.chatId eq newId) and (Members.userId inList oldUsers) }
+        Members.update({ Members.chatId eq oldId }) { it[chatId] = newId }
+        // the parent PK can't be updated in place (children lack ON UPDATE CASCADE): copy, re-point, delete
+        Rechecks.selectAll().where { Rechecks.chatId eq oldId }.singleOrNull()?.let { r ->
+            if (Rechecks.selectAll().where { Rechecks.chatId eq newId }.empty()) Rechecks.insert {
+                it[chatId] = newId; it[deadline] = r[Rechecks.deadline]; it[startedBy] = r[Rechecks.startedBy]
+                it[startedAt] = r[Rechecks.startedAt]; it[closedAt] = r[Rechecks.closedAt]
+            }
+            RecheckMessages.update({ RecheckMessages.chatId eq oldId }) { it[chatId] = newId }
+            RecheckNotices.update({ RecheckNotices.chatId eq oldId }) { it[chatId] = newId }
+            Rechecks.deleteWhere { Rechecks.chatId eq oldId }
+        }
         GroupChats.deleteWhere { GroupChats.chatId eq oldId }
         true
     }
@@ -153,6 +169,7 @@ class SessionRepo(private val db: Database, private val crypto: Crypto) {
         FormSessions.upsert(onUpdateExclude = listOf(FormSessions.startedAt)) {
             it[userId] = s.userId; it[chatId] = s.chatId; it[formVersion] = s.formVersion; it[step] = s.step
             it[answers] = sealed; it[lang] = s.lang; it[startedAt] = s.touchedAt; it[touchedAt] = s.touchedAt
+            it[kind] = s.kind.name
         }
         Unit
     }
@@ -184,7 +201,8 @@ class SessionRepo(private val db: Database, private val crypto: Crypto) {
     private fun session(r: ResultRow): Session {
         val u = r[FormSessions.userId]; val c = r[FormSessions.chatId]
         return Session(u, c, r[FormSessions.formVersion], r[FormSessions.step],
-            json.decodeFromString(crypto.open(r[FormSessions.answers], aad(u, c))), r[FormSessions.lang], r[FormSessions.touchedAt])
+            json.decodeFromString(crypto.open(r[FormSessions.answers], aad(u, c))), r[FormSessions.lang], r[FormSessions.touchedAt],
+            Kind.valueOf(r[FormSessions.kind]))
     }
 }
 
@@ -192,11 +210,14 @@ class SubmissionRepo(private val db: Database, private val crypto: Crypto) {
     private fun aad(id: Long) = "submission|$id"
 
     /** Inserts, then seals with the generated id in the same transaction. */
-    fun create(chatId: Long, userId: Long, formVersion: Int?, profile: Profile, answers: Map<String, String>?, status: Status, at: Instant): Long =
+    fun create(chatId: Long, userId: Long, formVersion: Int?, profile: Profile, answers: Map<String, String>?, status: Status, at: Instant,
+        kind: Kind = Kind.JOIN, decidedBy: Long? = null, decidedAt: Instant? = null,
+    ): Long =
         transaction(db) {
             val id = Submissions.insert {
                 it[Submissions.chatId] = chatId; it[Submissions.userId] = userId; it[Submissions.formVersion] = formVersion
                 it[Submissions.profile] = ByteArray(0); it[Submissions.status] = status.name; it[createdAt] = at
+                it[Submissions.kind] = kind.name; it[Submissions.decidedBy] = decidedBy; it[Submissions.decidedAt] = decidedAt
             }[Submissions.id]
             Submissions.update({ Submissions.id eq id }) {
                 it[Submissions.profile] = crypto.seal(json.encodeToString(profile), aad(id))
@@ -214,6 +235,22 @@ class SubmissionRepo(private val db: Database, private val crypto: Crypto) {
             if (status == null) Submissions.chatId eq chatId
             else (Submissions.chatId eq chatId) and (Submissions.status eq status.name)
         }.orderBy(Submissions.id).map(::submission)
+    }
+
+    /** The newest row per person in the chat (highest id), then filtered by [status], newest first. */
+    fun latest(chatId: Long, status: Status?): List<Submission> = transaction(db) {
+        val newest = Submissions.id.max()
+        val ids = Submissions.select(newest).where { Submissions.chatId eq chatId }.groupBy(Submissions.userId).map { it[newest]!! }
+        Submissions.selectAll().where {
+            (Submissions.id inList ids).let { if (status == null) it else it and (Submissions.status eq status.name) }
+        }.orderBy(Submissions.id, org.jetbrains.exposed.v1.core.SortOrder.DESC).map(::submission)
+    }
+
+    fun pendingCheck(chatId: Long, userId: Long): Submission? = transaction(db) {
+        Submissions.selectAll().where {
+            (Submissions.chatId eq chatId) and (Submissions.userId eq userId) and
+                (Submissions.status eq Status.PENDING.name) and (Submissions.kind eq Kind.CHECK.name)
+        }.firstOrNull()?.let(::submission)
     }
 
     fun pendingFor(chatId: Long, userId: Long): Submission? = transaction(db) {
@@ -282,7 +319,8 @@ class SubmissionRepo(private val db: Database, private val crypto: Crypto) {
         return Submission(id, r[Submissions.chatId], r[Submissions.userId], r[Submissions.formVersion],
             json.decodeFromString(crypto.open(r[Submissions.profile], aad(id))),
             r[Submissions.answers]?.let { json.decodeFromString<Map<String, String>>(crypto.open(it, aad(id))) },
-            Status.valueOf(r[Submissions.status]), r[Submissions.decidedBy], r[Submissions.decidedAt], r[Submissions.createdAt])
+            Status.valueOf(r[Submissions.status]), r[Submissions.decidedBy], r[Submissions.decidedAt], r[Submissions.createdAt],
+            Kind.valueOf(r[Submissions.kind]))
     }
 }
 

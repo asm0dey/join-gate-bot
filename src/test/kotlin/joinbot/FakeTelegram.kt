@@ -30,7 +30,7 @@ data class EditMsg(val chatId: Long, val messageId: Long, val text: String, val 
  * A fake Telegram Bot API behind a real [bot], for service tests; safe for concurrent coroutines.
  * Each request is parsed back into records. Calls read like
  * "send 5 <text>", "edit 5 12 <text>", "answer cb1 <text> alert", "approve -100 5", "decline -100 5", "doc 5 <name>".
- * Admin lookups are not in [calls]; they go to [adminsCalls] (the chat ids looked up).
+ * A URL button is recorded with its url as [Button.data]. Admin lookups are not in [calls]; they go to [adminsCalls] (the chat ids looked up).
  */
 class FakeTelegram {
     val calls: MutableList<String> = Collections.synchronizedList(mutableListOf())
@@ -45,6 +45,15 @@ class FakeTelegram {
     @Volatile var decideResult: Decision = Decision.OK
     /** A chat without an entry fails the lookup. */
     val adminsOf: MutableMap<Long, List<Admin>> = ConcurrentHashMap()
+    /** Status per (chat, user) as getChatMember reports it; absent = "left". */
+    val members: MutableMap<Pair<Long, Long>, String> = ConcurrentHashMap()
+    /** Name and username getChatMember reports per user; absent = "User" @user. */
+    val profiles: MutableMap<Long, Profile> = ConcurrentHashMap()
+    /** getChatMember fails for these users. */
+    val failMemberFor: MutableSet<Long> = ConcurrentHashMap.newKeySet()
+    @Volatile var memberCount: Int? = null
+    /** Result of banChatMember: OK, NO_RIGHT or TRANSIENT (GONE is treated as OK). */
+    @Volatile var banResult: Kick = Kick.OK
     /** Declining these users fails at the transport level. */
     val failDeclineFor: MutableSet<Long> = ConcurrentHashMap.newKeySet()
     private val ids = AtomicLong(100)
@@ -72,7 +81,7 @@ class FakeTelegram {
             calls += "doc $chat $name"
             sent(chat, result(chat))
         }
-        else -> handleJson(method, Json.parseToJsonElement(body).jsonObject)
+        else -> handleJson(method, if (body.isBlank()) JsonObject(emptyMap()) else Json.parseToJsonElement(body).jsonObject)
     }
 
     private fun MockRequestHandleScope.handleJson(method: String, j: JsonObject) = when (method) {
@@ -110,6 +119,25 @@ class FakeTelegram {
             adminsOf[chat]?.let { admins -> ok(admins.joinToString(",", "[", "]") { it.json() }) }
                 ?: fail(400, "Bad Request: chat not found")
         }
+        "getChatMember" -> {
+            val chat = j.long("chat_id"); val user = j.long("user_id")
+            if (user in failMemberFor) fail(400, "Bad Request: member lookup failed")
+            else ok(memberJson(user, members[chat to user] ?: "left", profiles[user] ?: Profile("User", "user")))
+        }
+        "getChatMemberCount" -> memberCount?.let { ok("$it") } ?: fail(400, "Bad Request: chat not found")
+        "banChatMember" -> {
+            calls += "ban ${j.long("chat_id")} ${j.long("user_id")}"
+            when (banResult) {
+                Kick.NO_RIGHT -> fail(400, "Bad Request: not enough rights to restrict/unrestrict chat member")
+                Kick.TRANSIENT -> fail(500, "Internal Server Error")
+                else -> ok("true")
+            }
+        }
+        "unbanChatMember" -> {
+            calls += "unban ${j.long("chat_id")} ${j.long("user_id")}"
+            ok("true")
+        }
+        "getMe" -> ok("""{"id":0,"is_bot":true,"first_name":"Fake","username":"joinbot"}""")
         else -> error("FakeTelegram: unexpected method $method")
     }
 
@@ -156,11 +184,28 @@ private fun JsonObject.long(key: String) = str(key)!!.toLong()
 
 private fun JsonObject.buttons(): Keyboard =
     get("reply_markup")?.jsonObject?.get("inline_keyboard")?.jsonArray?.map { row ->
-        row.jsonArray.map { Button(it.jsonObject.str("text")!!, it.jsonObject.str("callback_data")!!) }
+        row.jsonArray.map { Button(it.jsonObject.str("text")!!, it.jsonObject.str("callback_data") ?: it.jsonObject.str("url")!!) }
     } ?: emptyList()
 
 private fun Admin.json() =
     """{"status":"administrator","user":{"id":$userId,"is_bot":$isBot,"first_name":${Json.encodeToString(name)}},
     "can_be_edited":false,"is_anonymous":false,"can_manage_chat":true,"can_delete_messages":false,
-    "can_restrict_members":false,"can_promote_members":false,"can_change_info":false,"can_invite_users":$canInvite,
+    "can_restrict_members":$canBan,"can_promote_members":false,"can_change_info":false,"can_invite_users":$canInvite,
     "can_manage_video_chats":false,"can_post_stories":false,"can_edit_stories":false,"can_delete_stories":false}"""
+
+private fun memberJson(id: Long, status: String, p: Profile): String {
+    val username = p.username?.let { ""","username":${Json.encodeToString(it)}""" }.orEmpty()
+    val user = """"user":{"id":$id,"is_bot":false,"first_name":${Json.encodeToString(p.name)}$username}"""
+    val rest = listOf(
+        "can_send_messages", "can_send_audios", "can_send_documents", "can_send_photos", "can_send_videos",
+        "can_send_video_notes", "can_send_voice_notes", "can_send_polls", "can_send_other_messages",
+        "can_add_web_page_previews", "can_react_to_messages", "can_edit_tag", "can_change_info", "can_invite_users",
+        "can_pin_messages", "can_manage_topics",
+    ).joinToString(",") { """"$it":false""" }
+    return when (status) {
+        "creator" -> """{"status":"creator",$user,"is_anonymous":false}"""
+        "administrator" -> Admin(id, p.name, false, false).json().replaceFirst(Regex(""""user":\{[^}]*\}"""), Regex.escapeReplacement(user))
+        "restricted" -> """{"status":"restricted",$user,"is_member":true,$rest,"until_date":0}"""
+        else -> """{"status":"$status",$user${if (status == "kicked") ""","until_date":0""" else ""}}"""
+    }
+}

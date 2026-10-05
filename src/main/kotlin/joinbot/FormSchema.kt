@@ -60,15 +60,15 @@ sealed interface Input {
 
 enum class Reason { REQUIRED, TOO_LONG, NOT_A_NUMBER, TOO_SMALL, TOO_LARGE, NOT_A_LINK, TOO_FEW, TOO_MANY, BAD_OPTION, WRONG_KIND }
 
-sealed interface Check {
-    data class Ok(val value: String) : Check
-    data class Invalid(val reason: Reason) : Check
+sealed interface Checked {
+    data class Ok(val value: String) : Checked
+    data class Invalid(val reason: Reason) : Checked
 }
 
-private fun ok(v: String): Check = Check.Ok(v)
-private fun bad(r: Reason): Check = Check.Invalid(r)
+private fun ok(v: String): Checked = Checked.Ok(v)
+private fun bad(r: Reason): Checked = Checked.Invalid(r)
 
-fun validate(field: Field, input: Input): Check {
+fun validate(field: Field, input: Input): Checked {
     if (input is Input.Skip) return if (field.required) bad(Reason.REQUIRED) else ok("")
     return when (field) {
         is Radio -> when (input) {
@@ -106,7 +106,7 @@ fun validate(field: Field, input: Input): Check {
 }
 
 /** Trims, treats blank as missing, enforces max length, then hands the trimmed text to [next]. */
-private fun typed(field: Field, raw: String, maxLen: Int, next: (String) -> Check): Check {
+private fun typed(field: Field, raw: String, maxLen: Int, next: (String) -> Checked): Checked {
     val t = raw.trim()
     return when {
         t.isEmpty() -> if (field.required) bad(Reason.REQUIRED) else ok("")

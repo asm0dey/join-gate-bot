@@ -28,7 +28,7 @@ class Purge(
             try {
                 // re-read: expiring an earlier session may have just started this one
                 val s = sessions.get(idle.userId, idle.chatId)?.takeIf { it.touchedAt < cutoff } ?: continue
-                subs.create(s.chatId, s.userId, s.formVersion, s.state.profile, null, Status.EXPIRED, now)
+                if (s.kind == Kind.JOIN) subs.create(s.chatId, s.userId, s.formVersion, s.state.profile, null, Status.EXPIRED, now)
                 flow.decline(s, T.EXPIRED, startNext = true)
             } catch (e: CancellationException) {
                 throw e

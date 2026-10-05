@@ -52,10 +52,16 @@ You need Docker with Compose. The Mini App also needs a public HTTPS address; wi
 
 ## Guard a group
 
-1. Add the bot to the group as an admin with the **Invite users** right.
+1. Add the bot to the group as an admin with the **Invite users** right. To check existing members, also give it **Ban users**.
 2. Turn on **Approve new members** for the group, or hand out an invite link that requires approval.
 3. Each admin who should review opens a DM with the bot and sends `/start`. Admins who haven't can't be messaged by the bot.
 4. Open the bot's menu button (**Forms**), pick the group and build the form. Until a group has a form, the bot ignores its join requests.
+
+## Check existing members
+
+An admin with **Invite users** and **Ban users** sends `/remind` in the group (`/remind 3d` or `/remind 48h` sets the deadline; the default is 7 days, the range 1h to 365d). The bot posts a **Fill the form** button; members who tap it fill the form in a DM, and admins review the answers as they review join requests. Members who already passed can update their answers instead.
+
+At the deadline each such admin gets a DM listing who hasn't filled the form, with a **Remove** button per person. The bot only knows members it has seen join, post or react, so the list says "knows N of M" and leaves the rest out. `/remind` without a duration re-posts the button and keeps the deadline.
 
 ## Operate
 

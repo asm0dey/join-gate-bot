@@ -18,7 +18,7 @@ private class PurgeEnv(name: String) {
     val sessions = SessionRepo(db, testCrypto())
     val subs = SubmissionRepo(db, testCrypto())
     val users = BotUserRepo(db)
-    val review = ReviewService(subs, FormRepo(db), groups, users, AdminCheck(tg.bot, clock), tg.bot, clock)
+    val review = ReviewService(subs, FormRepo(db), groups, users, MemberRepo(db), AdminCheck(tg.bot, clock, 0), tg.bot, clock)
     val flow = ApplicantFlow(groups, FormRepo(db), sessions, subs, users, review, tg.bot, clock)
     val purge = Purge(sessions, flow, subs, groups, clock)
 
@@ -39,6 +39,17 @@ class PurgeTest : StringSpec({
         e.sessions.get(5, -1).shouldBeNull()
         e.sessions.get(6, -1).shouldNotBeNull()
         e.tg.calls.contains("decline -1 6") shouldBe false
+    }
+
+    "an idle check session is closed without an EXPIRED submission or a decline" {
+        val e = PurgeEnv("purge-check")
+        e.groups.upsert(-1, "G", true)
+        e.sessions.put(Session(5, -1, 1, 0, SessionState(ann), "en", e.clock.instant() - Duration.ofDays(8), Kind.CHECK))
+        e.purge.runOnce()
+        e.sessions.get(5, -1).shouldBeNull()
+        e.subs.list(-1, Status.EXPIRED).shouldBeEmpty()
+        e.tg.calls.none { it.startsWith("decline") } shouldBe true
+        e.tg.sent.single { it.chatId == 5L }.text shouldBe Texts.t("en", T.CHECK_FORM_CLOSED)
     }
 
     "waiting session expires too" {

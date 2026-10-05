@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory
 /** Reacts to the bot being added, promoted, demoted or removed in a group, and to a group becoming a supergroup. */
 class GroupRegistry(
     private val groups: GroupRepo, private val sessions: SessionRepo, private val subs: SubmissionRepo, private val users: BotUserRepo,
-    private val review: ReviewService, private val flow: ApplicantFlow, private val bot: TelegramBot,
+    private val review: ReviewService, private val flow: ApplicantFlow, private val checks: CheckService, private val bot: TelegramBot,
 ) {
     // ponytail: global lock, bot-status changes are rare; per-chat locks if that changes
     private val lock = Mutex()
@@ -33,6 +33,13 @@ class GroupRegistry(
         } catch (e: Exception) {
             log.warn("closing forms failed: {}", e.javaClass.simpleName)
         }
+        try {
+            checks.closeForChat(chatId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("closing the check failed: {}", e.javaClass.simpleName)
+        }
     }
 
     /** The group became a supergroup with [newId]; everything moves there. A repeated update changes nothing. */
@@ -40,9 +47,12 @@ class GroupRegistry(
         if (groups.migrate(oldId, newId, sessions)) log.info("group moved to its supergroup")
     }
 
-    /** One-shot on active → inactive, so it runs before the retryable closeForChat. Nothing is approved or declined. */
+    /**
+     * One-shot on active → inactive, so it runs before the retryable closeForChat. Nothing is approved or declined.
+     * Only join applicants are told: a pending Check has no join request to review in Telegram.
+     */
     private suspend fun handOff(chatId: Long) {
-        val pending = subs.list(chatId, Status.PENDING)
+        val pending = subs.list(chatId, Status.PENDING).filter { it.kind == Kind.JOIN }
         for (userId in pending.map { it.userId }.distinct()) {
             try {
                 bot.sendText(userId, Texts.t(users.lang(userId), T.MANUAL_REVIEW))

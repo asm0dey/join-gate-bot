@@ -14,12 +14,12 @@ fun toCsv(forms: List<Pair<Int, Form>>, subs: List<Submission>): String {
     val ids = LinkedHashSet<String>()
     val labels = HashMap<String, String>()
     for ((_, form) in newestFirst) for (f in form.fields) { ids += f.id; labels.putIfAbsent(f.id, f.prompt) }
-    val fixed = listOf("id", "user_id", "name", "username", "status", "created_at", "decided_at")
+    val fixed = listOf("id", "user_id", "name", "username", "kind", "status", "form_version", "created_at", "decided_at")
     return buildString {
         append((fixed + ids.map { labels.getValue(it) }).joinToString(",") { cell(it) }).append("\r\n")
         for (s in subs) {
-            val row = listOf(s.id.toString(), s.userId.toString(), s.profile.name, s.profile.username ?: "", s.status.name,
-                s.createdAt.toString(), s.decidedAt?.toString() ?: "") + ids.map { s.answers?.get(it) ?: "" }
+            val row = listOf(s.id.toString(), s.userId.toString(), s.profile.name, s.profile.username ?: "", s.kind.name, s.status.name,
+                s.formVersion?.toString() ?: "", s.createdAt.toString(), s.decidedAt?.toString() ?: "") + ids.map { s.answers?.get(it) ?: "" }
             append(row.joinToString(",") { cell(it) }).append("\r\n")
         }
     }

@@ -189,4 +189,39 @@ class ReposTest : StringSpec({
         groups.get(2) shouldBe Group(2, "New", false, 30, null)
         groups.get(1) shouldBe null
     }
+
+    "kind round-trips on sessions and submissions" {
+        val db = testDb("kind round-trips"); group(db, 1)
+        val sessions = SessionRepo(db, testCrypto()); val subs = SubmissionRepo(db, testCrypto())
+        sessions.put(Session(1, 1, 1, 0, SessionState(p), null, now, Kind.CHECK))
+        sessions.get(1, 1)!!.kind shouldBe Kind.CHECK
+        val id = subs.create(1, 1, 1, p, null, Status.APPROVED, now, Kind.UPDATE, 9, now)
+        subs.get(id)!!.let { it.kind shouldBe Kind.UPDATE; it.decidedBy shouldBe 9L; it.decidedAt shouldBe now }
+        subs.get(subs.create(1, 2, 1, p, null, Status.PENDING, now))!!.kind shouldBe Kind.JOIN
+    }
+
+    "migrate onto an existing row merges overlapping members and moves an open recheck" {
+        val db = testDb("migrate overlap"); val groups = GroupRepo(db)
+        val members = MemberRepo(db); val checks = CheckRepo(db)
+        groups.upsert(-100, "g", true); groups.upsert(-200, "g2", true)
+        members.pass(-100, 1, now); members.seen(-200, 1); members.seen(-100, 2); members.seen(-200, 3)
+        checks.open(-100, now, 9, now); checks.addMessage(-100, 5); checks.notice(-100, 9, false)
+        groups.migrate(-100, -200, SessionRepo(db, testCrypto())) shouldBe true
+        members.count(-100) shouldBe 0; members.count(-200) shouldBe 3
+        members.passedAt(-200, 1) shouldBe now
+        checks.get(-100) shouldBe null; checks.messages(-200) shouldBe listOf(5L); checks.undelivered(9) shouldBe listOf(-200L)
+    }
+
+    "migrate moves members and the check" {
+        val db = testDb("migrate moves members"); val groups = GroupRepo(db)
+        val members = MemberRepo(db); val checks = CheckRepo(db)
+        groups.upsert(-100, "g", true)
+        members.pass(-100, 1, now); members.seen(-100, 2)
+        checks.open(-100, now, 9, now); checks.addMessage(-100, 5); checks.notice(-100, 9, false)
+        groups.migrate(-100, -200, SessionRepo(db, testCrypto())) shouldBe true
+        members.count(-100) shouldBe 0; members.count(-200) shouldBe 2
+        checks.get(-100) shouldBe null; checks.get(-200)!!.startedBy shouldBe 9L
+        checks.messages(-100) shouldBe emptyList(); checks.messages(-200) shouldBe listOf(5L)
+        checks.undelivered(9) shouldBe listOf(-200L)
+    }
 })

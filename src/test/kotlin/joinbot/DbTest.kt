@@ -19,6 +19,7 @@ class DbTest : StringSpec({
             @Suppress("DEPRECATION") // replacement is in exposed-migration-jdbc, which we don't use
             org.jetbrains.exposed.v1.jdbc.SchemaUtils.statementsRequiredToActualizeScheme(
                 GroupChats, Forms, FormSessions, Submissions, ReviewMessages, BotUsers, Canary,
+                Members, Rechecks, RecheckMessages, RecheckNotices,
             ).shouldBeEmpty()
         }
     }

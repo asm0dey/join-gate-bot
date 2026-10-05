@@ -35,7 +35,7 @@ private class ApiEnv(name: String, val webDir: File = File("/nonexistent")) {
     val tg = FakeTelegram()
     val groups = GroupRepo(db); val forms = FormRepo(db); val subs = SubmissionRepo(db, testCrypto())
     val deps = MiniAppDeps({ t -> t.removePrefix("u").toLongOrNull()?.let { Viewer(it, null, null) } }, groups, forms, subs,
-        AdminCheck(tg.bot, clock), tg.bot, BotUserRepo(db), clock)
+        AdminCheck(tg.bot, clock, 0), tg.bot, BotUserRepo(db), clock)
 
     init {
         groups.upsert(G1, "My Club/ü", true); groups.upsert(G2, "Other", true)
@@ -147,6 +147,18 @@ class MiniAppApiTest : StringSpec({
             parse(get("/api/groups/$G1/submissions?status=PENDING").bodyAsText()).jsonArray.size shouldBe 1
             parse(get("/api/groups/$G1/submissions?status=APPROVED").bodyAsText()).jsonArray.size shouldBe 0
             get("/api/groups/$G1/submissions?status=bogus").status shouldBe HttpStatusCode.BadRequest
+        }
+    }
+    "submissions list shows each person's latest, then filters; rows carry their kind" {
+        val e = ApiEnv("api-latest")
+        val t = e.clock.instant()
+        e.subs.create(G1, 5, 1, Profile("Ann", null), null, Status.REJECTED, t)
+        e.subs.create(G1, 5, 1, Profile("Ann", null), null, Status.PENDING, t, Kind.CHECK)
+        e.run {
+            val all = parse(get("/api/groups/$G1/submissions").bodyAsText()).jsonArray
+            all.size shouldBe 1
+            all[0].jsonObject["kind"]!!.jsonPrimitive.content shouldBe "CHECK"
+            parse(get("/api/groups/$G1/submissions?status=REJECTED").bodyAsText()).jsonArray.size shouldBe 0
         }
     }
     "submission detail flags a partial submission" {

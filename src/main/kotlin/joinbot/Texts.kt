@@ -4,8 +4,13 @@ import java.util.Locale
 
 // Keys with String.format arguments (all others take none):
 //   NUDGE(count: Int), GROUP_HANDOFF(count: Int)
+//   FORM_FOR(groupTitle), QUEUED(groupTitle)
 //   DECIDED_BY_APPROVED(name), DECIDED_BY_REJECTED(name), ALREADY_DECIDED(name)
-//   REVIEW_HEADER(applicantName, groupTitle), REVIEW_UNREACHABLE(applicantName)
+//   REVIEW_HEADER(applicantName, groupTitle), CHECK_HEADER(applicantName, groupTitle), UPDATE_HEADER(applicantName, groupTitle), REVIEW_UNREACHABLE(applicantName)
+//   DECIDED_BY_REMOVED(name), CHECK_APPROVED_USER(groupTitle), CHECK_REMOVED_USER(groupTitle)
+//   REMIND_POST(date), REMIND_KNOWS(known: Int, total: Int, groupTitle), REMIND_POST_FAILED(groupTitle), OFFER_UPDATE(groupTitle)
+//   CHECK_CLOSED(date), NONRESPONDERS(groupTitle, date, known: Int, total: Int), REMOVE_NAME(label), ALL_PASSED(groupTitle)
+//   PASSED_SINCE(name), PENDING_SINCE(name), ID_ONLY(userId: Long)
 //   INVALID_TOO_FEW(min: Int), INVALID_TOO_MANY(max: Int), MULTI_EXACT(n: Int), MULTI_RANGE(min: Int, max: Int), MULTI_UP_TO(max: Int)
 // AN_ADMIN is the decider name when they are no longer an admin.
 // Always formatted, so a forgotten arg throws. Avoid a literal percent sign in any text.
@@ -17,6 +22,11 @@ enum class T {
     REVIEW_HEADER, REVIEW_UNREACHABLE, APPROVE, REJECT, DECIDED_BY_APPROVED, DECIDED_BY_REJECTED, ALREADY_DECIDED, NOT_ADMIN_ANYMORE,
     TRY_AGAIN, WITHDRAWN, AN_ADMIN, NUDGE, NEEDS_INVITE_RIGHT, EXPORT_READY,
     MANUAL_REVIEW, REVIEW_SUSPENDED, GROUP_HANDOFF, MULTI_EXACT, MULTI_RANGE, MULTI_UP_TO,
+    FORM_FOR, QUEUED, CHECK_FORM_CLOSED, UPDATE_FORM_CLOSED, UPDATE_SAVED, FORM_CLOSED,
+    CHECK_HEADER, UPDATE_HEADER, REMOVE, DECIDED_BY_REMOVED, CHECK_APPROVED_USER, CHECK_REMOVED_USER, NO_BAN_RIGHT,
+    REMIND_POST, FILL_FORM, REMIND_KNOWS, REMIND_BAD_DURATION, REMIND_NO_FORM, REMIND_NO_BAN, REMIND_ANONYMOUS, REMIND_POST_FAILED,
+    CHECK_ENDED, NOT_IN_GROUP, ADMINS_EXEMPT, CHECK_PENDING, OFFER_UPDATE, YES_UPDATE, UPDATE_LIST,
+    CHECK_CLOSED, NONRESPONDERS, REMOVE_NAME, ALL_PASSED, PASSED_SINCE, PENDING_SINCE, ALREADY_REMOVED, ID_ONLY,
 }
 
 private val en = mapOf(
@@ -67,6 +77,42 @@ private val en = mapOf(
     T.MANUAL_REVIEW to "The group's admins will review your join request directly in Telegram.",
     T.REVIEW_SUSPENDED to "I can no longer approve requests here — use the group's Join requests list.",
     T.GROUP_HANDOFF to "I can't approve join requests any more. %d request(s) wait in this group's Join requests list.",
+    T.FORM_FOR to "Form for %s",
+    T.QUEUED to "You'll get %s's form after you finish the current one.",
+    T.CHECK_FORM_CLOSED to "Form closed. Tap the button in the group to start again.",
+    T.UPDATE_FORM_CLOSED to "Form closed. Send /start to update your answers again.",
+    T.UPDATE_SAVED to "Thanks! Your updated answers were saved.",
+    T.FORM_CLOSED to "This form is closed.",
+    T.CHECK_HEADER to "Member check: %s in %s",
+    T.UPDATE_HEADER to "Updated answers: %s in %s",
+    T.REMOVE to "Remove",
+    T.DECIDED_BY_REMOVED to "Removed by %s",
+    T.CHECK_APPROVED_USER to "You're all set in %s.",
+    T.CHECK_REMOVED_USER to "The admins removed you from %s. You can ask to join again.",
+    T.NO_BAN_RIGHT to "The bot can't remove members: give it the Ban users right.",
+    T.REMIND_POST to "Members who haven't filled the join form yet: please do it by %s.",
+    T.FILL_FORM to "Fill the form",
+    T.REMIND_KNOWS to "The bot knows %d of %d members of %s.",
+    T.REMIND_BAD_DURATION to "Use a duration from 1h to 365d, like 7d or 48h.",
+    T.REMIND_NO_FORM to "This group has no form yet.",
+    T.REMIND_NO_BAN to "I need the Ban users right to run a check.",
+    T.REMIND_ANONYMOUS to "Anonymous admins can't start a check; post as yourself.",
+    T.REMIND_POST_FAILED to "I couldn't post the check message in %s.",
+    T.CHECK_ENDED to "This check has ended.",
+    T.NOT_IN_GROUP to "You're not in this group.",
+    T.ADMINS_EXEMPT to "Admins don't need to fill the form.",
+    T.CHECK_PENDING to "Your answers are waiting for the deciders' review.",
+    T.OFFER_UPDATE to "You've already filled the form for %s. Want to update your answers?",
+    T.YES_UPDATE to "Yes, update",
+    T.UPDATE_LIST to "You can update your answers for:",
+    T.CHECK_CLOSED to "The check closed on %s.",
+    T.NONRESPONDERS to "Didn't fill the form for %s by %s. The bot knows %d of %d members; only those are listed.",
+    T.REMOVE_NAME to "Remove %s",
+    T.ALL_PASSED to "Everyone the bot knows in %s has filled the form.",
+    T.PASSED_SINCE to "%s has filled the form since.",
+    T.PENDING_SINCE to "%s's answers are waiting for review.",
+    T.ALREADY_REMOVED to "Already removed.",
+    T.ID_ONLY to "id %d",
 )
 
 private val ru = mapOf(
@@ -117,6 +163,42 @@ private val ru = mapOf(
     T.MANUAL_REVIEW to "Администраторы группы рассмотрят вашу заявку прямо в Telegram.",
     T.REVIEW_SUSPENDED to "Я больше не могу принимать заявки здесь — используйте список «Заявки на вступление» в группе.",
     T.GROUP_HANDOFF to "Я больше не могу принимать заявки на вступление. В списке «Заявки на вступление» этой группы ждут заявок: %d.",
+    T.FORM_FOR to "Анкета для %s",
+    T.QUEUED to "Анкета группы %s придёт после того, как вы закончите текущую.",
+    T.CHECK_FORM_CLOSED to "Анкета закрыта. Нажмите кнопку в группе, чтобы начать заново.",
+    T.UPDATE_FORM_CLOSED to "Анкета закрыта. Отправьте /start, чтобы обновить ответы снова.",
+    T.UPDATE_SAVED to "Спасибо! Обновлённые ответы сохранены.",
+    T.FORM_CLOSED to "Эта анкета закрыта.",
+    T.CHECK_HEADER to "Проверка участника: %s в %s",
+    T.UPDATE_HEADER to "Обновлённые ответы: %s в %s",
+    T.REMOVE to "Исключить",
+    T.DECIDED_BY_REMOVED to "Исключил(а): %s",
+    T.CHECK_APPROVED_USER to "Всё в порядке, вы остаётесь в %s.",
+    T.CHECK_REMOVED_USER to "Администраторы исключили вас из %s. Можно подать заявку снова.",
+    T.NO_BAN_RIGHT to "Бот не может исключать участников: дайте ему право «Блокировать пользователей».",
+    T.REMIND_POST to "Участники, которые ещё не заполнили анкету группы: пожалуйста, заполните её до %s.",
+    T.FILL_FORM to "Заполнить анкету",
+    T.REMIND_KNOWS to "Бот знает %d из %d участников %s.",
+    T.REMIND_BAD_DURATION to "Укажите срок от 1h до 365d, например 7d или 48h.",
+    T.REMIND_NO_FORM to "У этой группы пока нет анкеты.",
+    T.REMIND_NO_BAN to "Чтобы провести проверку, мне нужно право «Блокировать пользователей».",
+    T.REMIND_ANONYMOUS to "Анонимные администраторы не могут начать проверку; напишите от своего имени.",
+    T.REMIND_POST_FAILED to "Не удалось опубликовать сообщение о проверке в %s.",
+    T.CHECK_ENDED to "Эта проверка завершена.",
+    T.NOT_IN_GROUP to "Вы не состоите в этой группе.",
+    T.ADMINS_EXEMPT to "Администраторам не нужно заполнять анкету.",
+    T.CHECK_PENDING to "Ваши ответы ждут решения администраторов.",
+    T.OFFER_UPDATE to "Вы уже заполнили анкету для %s. Хотите обновить ответы?",
+    T.YES_UPDATE to "Да, обновить",
+    T.UPDATE_LIST to "Вы можете обновить ответы для:",
+    T.CHECK_CLOSED to "Проверка завершилась %s.",
+    T.NONRESPONDERS to "Не заполнили анкету для %s до %s. Бот знает %d из %d участников; в списке только они.",
+    T.REMOVE_NAME to "Исключить %s",
+    T.ALL_PASSED to "Все, кого бот знает в %s, заполнили анкету.",
+    T.PASSED_SINCE to "%s уже заполнил(а) анкету.",
+    T.PENDING_SINCE to "Ответы %s ждут решения.",
+    T.ALREADY_REMOVED to "Уже исключён(а).",
+    T.ID_ONLY to "id %d",
 )
 
 object Texts {

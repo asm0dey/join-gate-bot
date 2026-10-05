@@ -3,9 +3,10 @@ import type { Form } from './editor'
 
 export type Group = { id: number; title: string; hasForm: boolean; retentionDays: number; active: boolean }
 export type FormDto = { version: number; schema: Form | null }
-export type Status = 'PENDING' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN' | 'EXPIRED'
-export const STATUSES: Status[] = ['PENDING', 'APPROVED', 'REJECTED', 'WITHDRAWN', 'EXPIRED']
-export type SubmissionRow = { id: number; userId: number; name: string; username: string | null; status: Status; createdAt: string; decidedBy: number | null }
+export type Status = 'PENDING' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN' | 'EXPIRED' | 'REMOVED'
+export type Kind = 'JOIN' | 'CHECK' | 'UPDATE'
+export const STATUSES: Status[] = ['PENDING', 'APPROVED', 'REJECTED', 'WITHDRAWN', 'EXPIRED', 'REMOVED']
+export type SubmissionRow = { id: number; userId: number; name: string; username: string | null; kind: Kind; status: Status; createdAt: string; decidedBy: number | null }
 export type Answer = { fieldId: string; prompt: string; value: string }
 export type SubmissionDetail = { row: SubmissionRow; answers: Answer[] | null; partial: boolean }
 
@@ -33,7 +34,7 @@ export const api = {
   groups: () => call<Group[]>('GET', '/groups'),
   form: (id: number) => call<FormDto>('GET', `${g(id)}/form`),
   saveForm: (id: number, schema: Form, baseVersion: number) => call<{ version: number }>('PUT', `${g(id)}/form`, { schema, baseVersion }),
-  submissions: (id: number, status?: Status) => call<SubmissionRow[]>('GET', `${g(id)}/submissions${status ? `?status=${status}` : ''}`),
+  submissions: (id: number, status?: Status) => call<SubmissionRow[]>('GET', `${g(id)}/submissions` + (status ? `?status=${status}` : '')),
   submission: (id: number, sid: number) => call<SubmissionDetail>('GET', `${g(id)}/submissions/${sid}`),
   remove: (id: number, sid: number) => call<void>('DELETE', `${g(id)}/submissions/${sid}`),
   exportCsv: (id: number) => call<void>('POST', `${g(id)}/export`),

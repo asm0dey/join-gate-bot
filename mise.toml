@@ -11,7 +11,7 @@ run = "bun install --frozen-lockfile"
 [tasks."web:test"]
 depends = ["web:install"]
 dir = "web"
-run = "bun test src"
+run = "bun test src --coverage --coverage-reporter=lcov"
 
 [tasks."web:build"]
 depends = ["web:install"]

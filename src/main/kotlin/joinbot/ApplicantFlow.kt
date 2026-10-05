@@ -60,6 +60,29 @@ class ApplicantFlow(
         }
     }
 
+    /** A Check or Update form for [chatId]: re-asks an existing session, queues behind another group's form, else begins. */
+    suspend fun startMember(chatId: Long, userId: Long, profile: Profile, lang: String?, kind: Kind) {
+        locked(userId) {
+            if (lang != null) users.setLang(userId, lang)
+            val (version, _) = forms.current(chatId) ?: return
+            val existing = sessions.get(userId, chatId)
+            if (existing != null) {
+                val form = formOf(existing) ?: return
+                put(existing)
+                if (existing.step != WAITING && !ask(existing, form)) startNext(userId)
+                return
+            }
+            val s = Session(userId, chatId, version, 0, SessionState(profile), lang, clock.instant(), kind)
+            val active = sessions.active(userId)
+            if (active != null) {
+                sessions.put(s.copy(step = WAITING))
+                bot.sendText(userId, Texts.t(lang, T.QUEUED, groupTitle(chatId)))
+            } else begin(s, userId)
+        }
+    }
+
+    private fun groupTitle(chatId: Long) = groups.get(chatId)?.title.orEmpty()
+
     /** False when [userId] has no active session. */
     suspend fun onMessage(userId: Long, text: String?, lang: String?): Boolean = locked(userId) {
         val s = sessions.active(userId)?.withLang(lang) ?: return@locked false
@@ -68,8 +91,8 @@ class ApplicantFlow(
         val buttonOnly = field == null || field is Multi || field is Consent || (field is Radio && !s.state.otherMode)
         if (text == null || buttonOnly) return@locked reask(s, form, Reason.WRONG_KIND)
         when (val c = validate(field, Input.Typed(text))) {
-            is Check.Ok -> advance(s, form, c.value)
-            is Check.Invalid -> reask(s, form, c.reason)
+            is Checked.Ok -> advance(s, form, c.value)
+            is Checked.Invalid -> reask(s, form, c.reason)
         }
         true
     }
@@ -131,11 +154,11 @@ class ApplicantFlow(
             else -> return stale()
         }
         when (val c = validate(field, input)) {
-            is Check.Ok -> {
+            is Checked.Ok -> {
                 bot.answerCallback(callbackId); bot.editText(userId, messageId, field.prompt); advance(s, form, c.value)
             }
             // a skip on a required field or an unknown option only comes from a forged button
-            is Check.Invalid -> if (field is Multi && (c.reason == Reason.TOO_FEW || c.reason == Reason.TOO_MANY)) {
+            is Checked.Invalid -> if (field is Multi && (c.reason == Reason.TOO_FEW || c.reason == Reason.TOO_MANY)) {
                 val limit = if (c.reason == Reason.TOO_FEW) field.minPicks else field.maxPicks
                 bot.answerCallback(callbackId, Texts.t(s.lang, c.reason.text(), limit), alert = true)
             } else stale()
@@ -159,6 +182,11 @@ class ApplicantFlow(
 
     private suspend fun declineUnlocked(s: Session, key: T) {
         sessions.delete(s.userId, s.chatId)
+        // a Check or Update has no join request to decline
+        if (s.kind != Kind.JOIN) {
+            bot.sendText(s.userId, Texts.t(s.lang, if (s.kind == Kind.UPDATE) T.UPDATE_FORM_CLOSED else T.CHECK_FORM_CLOSED))
+            return
+        }
         try {
             bot.declineJoin(s.chatId, s.userId)
         } catch (e: CancellationException) {
@@ -175,7 +203,7 @@ class ApplicantFlow(
             val s = sessions.get(userId, chatId) ?: return@locked
             sessions.delete(userId, chatId)
             try {
-                bot.sendText(userId, Texts.t(s.lang ?: users.lang(userId), T.GROUP_GONE))
+                bot.sendText(userId, Texts.t(s.lang ?: users.lang(userId), (if (s.kind == Kind.JOIN) T.GROUP_GONE else T.FORM_CLOSED)))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -201,6 +229,13 @@ class ApplicantFlow(
         val form = formOf(s) ?: return false
         val start = fresh(s)
         put(start)
+        if (s.kind != Kind.JOIN) {
+            val sent = bot.sendText(dest, Texts.t(s.lang, T.FORM_FOR, groupTitle(s.chatId)))
+            if (sent !is Sent.Ok) {
+                unreachable(start, sent)
+                return false
+            }
+        }
         // a blank welcome only survives in forms saved before validateForm required one; Telegram rejects empty text
         val welcome = listOfNotNull(
             form.welcome.takeIf { it.isNotBlank() },
@@ -218,6 +253,7 @@ class ApplicantFlow(
     private suspend fun unreachable(s: Session, why: Sent) {
         if (why == Sent.Forbidden) users.forbidden(s.userId)
         sessions.delete(s.userId, s.chatId)
+        if (s.kind != Kind.JOIN) return
         val answers = s.state.answers.takeIf { it.isNotEmpty() }
         val id =
             subs.create(s.chatId, s.userId, s.formVersion, s.state.profile, answers, Status.PENDING, clock.instant())
@@ -250,17 +286,21 @@ class ApplicantFlow(
 
     private suspend fun submit(s: Session, form: Form) {
         // a create that landed before a failed delete must not be repeated by the summary's Submit button
-        if (subs.pendingFor(s.chatId, s.userId) != null) {
+        if (s.kind != Kind.UPDATE && subs.pendingFor(s.chatId, s.userId) != null) {
             sessions.delete(s.userId, s.chatId)
             startNext(s.userId)
             return
         }
         val answers = form.fields.associate { it.id to s.state.answers[it.id].orEmpty() }
-        val id =
-            subs.create(s.chatId, s.userId, s.formVersion, s.state.profile, answers, Status.PENDING, clock.instant())
+        val now = clock.instant()
+        val update = s.kind == Kind.UPDATE
+        val id = subs.create(
+            s.chatId, s.userId, s.formVersion, s.state.profile, answers,
+            if (update) Status.APPROVED else Status.PENDING, now, s.kind, decidedAt = if (update) now else null
+        )
         sessions.delete(s.userId, s.chatId)
-        bot.sendText(s.userId, Texts.t(s.lang, T.SUBMITTED))
-        review.submit(id)
+        bot.sendText(s.userId, Texts.t(s.lang, if (update) T.UPDATE_SAVED else T.SUBMITTED))
+        if (update) review.notifyUpdate(id) else review.submit(id)
         startNext(s.userId)
     }
 

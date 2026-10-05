@@ -12,25 +12,51 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # Sonar needs history for blame and new-code detection
+
+      # On PRs, build only the side that changed. Pushes to main build both, so Sonar's main
+      # analysis always has both coverage reports.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: changes
+        if: github.event_name == 'pull_request'
+        with:
+          filters: |
+            kotlin:
+              - 'src/**'
+              - 'pom.xml'
+              - '.mvn/**'
+              - '.sdkmanrc'
+              - '.github/workflows/**'
+            web:
+              - 'web/**'
+              - 'mise.toml'
+              - '.github/workflows/**'
 
       # Installs Java from .sdkmanrc and Bun from mise.toml, and caches both.
-      - uses: jdx/mise-action@v5
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
 
       - uses: actions/cache@v6
-        with:
-          path: ~/.m2/repository
-          key: m2-${{ runner.os }}-${{ hashFiles('pom.xml') }}
-          restore-keys: m2-${{ runner.os }}-
-
-      # Bun's package cache; node_modules itself is deliberately not cached.
-      - uses: actions/cache@v6
+        if: github.event_name != 'pull_request' || steps.changes.outputs.web == 'true'
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('web/bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
 
-      # Same command as local: builds web/dist, then the jar, and runs all tests.
-      - run: mise run build
+      # Bun's package cache above; node_modules itself is deliberately not cached.
+      - if: github.event_name != 'pull_request' || steps.changes.outputs.web == 'true'
+        run: mise run web:test && mise run web:build
+
+      - uses: actions/cache@v6
+        if: github.event_name != 'pull_request' || steps.changes.outputs.kotlin == 'true'
+        with:
+          path: ~/.m2/repository
+          key: m2-${{ runner.os }}-${{ hashFiles('pom.xml') }}
+          restore-keys: m2-${{ runner.os }}-
+
+      # Compile, KSP, tests with JaCoCo, jar + target/lib.
+      - if: github.event_name != 'pull_request' || steps.changes.outputs.kotlin == 'true'
+        run: mise run backend:build
 
       - uses: actions/upload-artifact@v7
         if: failure()
@@ -38,3 +64,13 @@ jobs:
           name: test-results
           path: target/surefire-reports/
           retention-days: 5
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/.sonar/cache
+          key: sonar-${{ runner.os }}
+          restore-keys: sonar-${{ runner.os }}
+
+      - uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

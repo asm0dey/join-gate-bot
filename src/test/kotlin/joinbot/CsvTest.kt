@@ -7,7 +7,7 @@ import java.time.Instant
 
 private val at = Instant.parse("2026-01-01T00:00:00Z")
 private fun sub(id: Long, answers: Map<String, String>, name: String = "Ann") =
-    Submission(id, -1, 5, 1, Profile(name, null), answers, Status.PENDING, null, null, at)
+    Submission(id, -1, 5, 1, Profile(name, null), answers, Status.PENDING, null, null, at, Kind.JOIN)
 
 class CsvTest : StringSpec({
     "union of field ids labelled with latest prompt" {
@@ -15,8 +15,13 @@ class CsvTest : StringSpec({
         val v2 = Form("", listOf(Text("b", "B2"), Text("c", "C2")))
         val csv = toCsv(listOf(1 to v1, 2 to v2), listOf(sub(1, mapOf("a" to "x", "b" to "y"))))
         val lines = csv.trim().split("\r\n")
-        lines[0] shouldBe "id,user_id,name,username,status,created_at,decided_at,B2,C2,A1"
-        lines[1] shouldBe "1,5,Ann,,PENDING,2026-01-01T00:00:00Z,,y,,x"
+        lines[0] shouldBe "id,user_id,name,username,kind,status,form_version,created_at,decided_at,B2,C2,A1"
+        lines[1] shouldBe "1,5,Ann,,JOIN,PENDING,1,2026-01-01T00:00:00Z,,y,,x"
+    }
+    "removed row with no form version has an empty cell" {
+        val f = Form("", listOf(Text("a", "A")))
+        val removed = Submission(2, -1, 6, null, Profile("Bob", null), null, Status.REMOVED, null, null, at, Kind.CHECK)
+        toCsv(listOf(1 to f), listOf(removed)).trim().split("\r\n")[1] shouldBe "2,6,Bob,,CHECK,REMOVED,,2026-01-01T00:00:00Z,,"
     }
     "formula injection neutralised and quotes escaped" {
         val f = Form("", listOf(Text("a", "A")))
