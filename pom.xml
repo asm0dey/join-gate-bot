@@ -14,7 +14,7 @@
         <exec.mainClass>joinbot.MainKt</exec.mainClass>
         <kotlin.version>2.4.20</kotlin.version>
         <ksp.maven.version>0.4.7</ksp.maven.version>
-        <telegrambot.version>9.6.0</telegrambot.version>
+        <telegrambot.version>9.7.0</telegrambot.version>
         <ktor.version>3.6.0</ktor.version>
         <serialization.version>1.11.0</serialization.version>
         <coroutines.version>1.11.0</coroutines.version>
