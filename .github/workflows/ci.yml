@@ -17,7 +17,7 @@ jobs:
 
       # On PRs, build only the side that changed. Pushes to main build both, so Sonar's main
       # analysis always has both coverage reports.
-      - uses: dorny/paths-filter@v4
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: changes
         if: github.event_name == 'pull_request'
         with:
@@ -34,7 +34,7 @@ jobs:
               - '.github/workflows/**'
 
       # Installs Java from .sdkmanrc and Bun from mise.toml, and caches both.
-      - uses: jdx/mise-action@v5
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
 
       - uses: actions/cache@v6
         if: github.event_name != 'pull_request' || steps.changes.outputs.web == 'true'
@@ -71,6 +71,6 @@ jobs:
           key: sonar-${{ runner.os }}
           restore-keys: sonar-${{ runner.os }}
 
-      - uses: SonarSource/sonarqube-scan-action@v8
+      - uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
