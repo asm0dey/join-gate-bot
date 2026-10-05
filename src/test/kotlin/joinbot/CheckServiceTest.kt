@@ -204,4 +204,31 @@ class CheckServiceTest : StringSpec({
             listOf(listOf(Button("Alpha", "u|$CHAT2")), listOf(Button("Club", "u|$CHAT"))),
         )
     }
+
+    "update button with a session for that chat is stale and starts nothing" {
+        val e = CheckEnv("cs-update-session")
+        e.tg.members[CHAT to U] = "member"
+        e.checks.open(CHAT, e.clock.instant().plus(Duration.ofDays(1)), ADMIN, e.clock.instant())
+        e.svc.enter(CHAT, ann, U, "en") // a Check session, now at "Why?"
+        e.members.pass(CHAT, U, e.clock.instant())
+        val before = e.tg.sent.size
+        e.svc.onUpdateButton(U, "cb", "u|$CHAT", ann, "en")
+        e.tg.calls.last() shouldBe "answer cb ${Texts.t("en", T.STALE_BUTTON)} alert"
+        e.tg.sent.size shouldBe before
+        e.sessions.get(U, CHAT)!!.kind shouldBe Kind.CHECK
+    }
+
+    "enter with a queued session for that chat says it is queued" {
+        val e = CheckEnv("cs-enter-queued")
+        e.group(CHAT2, "Alpha")
+        for (c in listOf(CHAT, CHAT2)) {
+            e.checks.open(c, e.clock.instant().plus(Duration.ofDays(1)), ADMIN, e.clock.instant())
+            e.tg.members[c to U] = "member"
+        }
+        e.svc.enter(CHAT2, ann, U, "en")
+        e.svc.enter(CHAT, ann, U, "en")
+        e.sessions.get(U, CHAT)!!.step shouldBe WAITING
+        e.svc.enter(CHAT, ann, U, "en")
+        e.texts().takeLast(2) shouldBe List(2) { U to Texts.t("en", T.QUEUED, "Club") }
+    }
 })

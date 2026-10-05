@@ -272,4 +272,14 @@ class HandlersTest : StringSpec({
         e.tg.calls.filter { it.startsWith("answer") } shouldBe listOf("answer cb ")
         e.sessions.get(U, CHAT)!!.kind shouldBe Kind.UPDATE
     }
+
+    "/remind addressed to another bot is ignored; our name matches in any case" {
+        val e = HandlerEnv("h-remind-other")
+        e.tg.adminsOf[CHAT] = listOf(Admin(U, "Ann", false, true, true), Admin(0, "Bot", true, true, true))
+        route(message(CHAT, "/remind@otherbot 3d"))
+        e.tg.calls.shouldBeEmpty()
+        e.checks.get(CHAT) shouldBe null
+        route(message(CHAT, "/remind@JoinBot 3d"))
+        e.checks.openCheck(CHAT)!!.deadline shouldBe e.clock.instant().plus(java.time.Duration.ofDays(3))
+    }
 })

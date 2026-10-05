@@ -115,7 +115,10 @@ suspend fun fallback(update: ProcessedUpdate): Unit = guarded("update") {
                 val remind = REMIND.matchEntire(m.text ?: return) ?: return
                 // an anonymous admin posts as the group: from is GroupAnonymousBot, sender_chat the group
                 val anonymous = m.senderChat?.id == m.chat.id
-                Registry.checks.remind(m.chat.id, (from ?: return).id, anonymous, remind.groupValues[2].ifEmpty { null })
+                Registry.checks.remind(
+                    m.chat.id, (from ?: return).id, anonymous, remind.groupValues[2].ifEmpty { null },
+                    remind.groupValues[1].removePrefix("@").ifEmpty { null },
+                )
                 return
             }
             if (!update.isPrivate()) return

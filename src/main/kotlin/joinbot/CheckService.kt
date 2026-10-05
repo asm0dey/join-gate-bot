@@ -34,6 +34,9 @@ class CheckService(
 ) {
     @Volatile private var username: String? = null
 
+    /** Cached after the first successful getMe; null while Telegram can't tell us. */
+    private suspend fun username() = username ?: bot.botUsername()?.also { username = it }
+
     // ponytail: one lock for every chat's /remind; per-chat locks if /remind ever gets busy
     private val remindLock = Mutex()
 
@@ -45,15 +48,19 @@ class CheckService(
         return if (hours in 1..MAX_HOURS) Duration.ofHours(hours) else null
     }
 
-    /** `/remind [arg]` from [fromId] in [chatId]; [anonymous] when posted as the group itself. */
-    suspend fun remind(chatId: Long, fromId: Long, anonymous: Boolean, arg: String?) {
+    /**
+     * `/remind[@addressedTo] [arg]` from [fromId] in [chatId]; [anonymous] when posted as the group itself.
+     * A command addressed to another bot, or to any name while ours is unknown, is ignored.
+     */
+    suspend fun remind(chatId: Long, fromId: Long, anonymous: Boolean, arg: String?, addressedTo: String? = null) {
         suspend fun reply(key: T) { bot.sendText(chatId, Texts.t(null, key)) }
+        if (addressedTo != null && !addressedTo.equals(username(), ignoreCase = true)) return
         if (anonymous) return reply(T.REMIND_ANONYMOUS)
         if (!admins.canDecideCheck(chatId, fromId, fresh = true)) return
         val duration = parseDuration(arg) ?: return reply(T.REMIND_BAD_DURATION)
         if (forms.current(chatId) == null) return reply(T.REMIND_NO_FORM)
         if (!admins.botCanBan(chatId)) return reply(T.REMIND_NO_BAN)
-        val name = username ?: bot.botUsername()?.also { username = it } ?: return reply(T.TRY_AGAIN)
+        val name = username() ?: return reply(T.TRY_AGAIN)
         val title = groups.get(chatId)?.title.orEmpty()
         val adminLang = users.lang(fromId)
         remindLock.withLock {
@@ -82,7 +89,9 @@ class CheckService(
         if (info.membership == Membership.GONE) return reply(T.NOT_IN_GROUP)
         roster.seen(chatId, userId)
         if (info.membership == Membership.ADMIN) return reply(T.ADMINS_EXEMPT)
-        if (sessions.get(userId, chatId) == null) {
+        val session = sessions.get(userId, chatId)
+        if (session?.step == WAITING) return reply(T.QUEUED, groups.get(chatId)?.title.orEmpty())
+        if (session == null) {
             if (subs.pendingCheck(chatId, userId) != null) return reply(T.CHECK_PENDING)
             if (members.passedAt(chatId, userId) != null) {
                 val yes = Button(Texts.t(lang, T.YES_UPDATE), "u|$chatId")
@@ -101,11 +110,12 @@ class CheckService(
         return true
     }
 
-    /** `u|<chatId>`: starts an Update session if the user is still a passed member of an active group with a form. */
+    /** `u|<chatId>`: starts an Update session if the user is still a passed member of an active group with a form and has no session for it. */
     suspend fun onUpdateButton(userId: Long, callbackId: String, data: String, profile: Profile, lang: String?) {
         val chatId = data.removePrefix("u|").toLongOrNull()
         if (chatId == null || groups.get(chatId)?.active != true || forms.current(chatId) == null ||
-            bot.memberInfo(chatId, userId)?.membership != Membership.MEMBER || members.passedAt(chatId, userId) == null
+            bot.memberInfo(chatId, userId)?.membership != Membership.MEMBER || members.passedAt(chatId, userId) == null ||
+            sessions.get(userId, chatId) != null
         ) return bot.answerCallback(callbackId, Texts.t(lang, T.STALE_BUTTON), alert = true)
         bot.answerCallback(callbackId)
         flow.startMember(chatId, userId, profile, lang, Kind.UPDATE)
