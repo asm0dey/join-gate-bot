@@ -9,6 +9,8 @@ import java.util.Locale
 //   REVIEW_HEADER(applicantName, groupTitle), CHECK_HEADER(applicantName, groupTitle), UPDATE_HEADER(applicantName, groupTitle), REVIEW_UNREACHABLE(applicantName)
 //   DECIDED_BY_REMOVED(name), CHECK_APPROVED_USER(groupTitle), CHECK_REMOVED_USER(groupTitle)
 //   REMIND_POST(date), REMIND_KNOWS(known: Int, total: Int, groupTitle), REMIND_POST_FAILED(groupTitle), OFFER_UPDATE(groupTitle)
+//   CHECK_CLOSED(date), NONRESPONDERS(groupTitle, date, known: Int, total: Int), REMOVE_NAME(label), ALL_PASSED(groupTitle)
+//   PASSED_SINCE(name), PENDING_SINCE(name), ID_ONLY(userId: Long)
 //   INVALID_TOO_FEW(min: Int), INVALID_TOO_MANY(max: Int), MULTI_EXACT(n: Int), MULTI_RANGE(min: Int, max: Int), MULTI_UP_TO(max: Int)
 // AN_ADMIN is the decider name when they are no longer an admin.
 // Always formatted, so a forgotten arg throws. Avoid a literal percent sign in any text.
@@ -24,6 +26,7 @@ enum class T {
     CHECK_HEADER, UPDATE_HEADER, REMOVE, DECIDED_BY_REMOVED, CHECK_APPROVED_USER, CHECK_REMOVED_USER, NO_BAN_RIGHT,
     REMIND_POST, FILL_FORM, REMIND_KNOWS, REMIND_BAD_DURATION, REMIND_NO_FORM, REMIND_NO_BAN, REMIND_ANONYMOUS, REMIND_POST_FAILED,
     CHECK_ENDED, NOT_IN_GROUP, ADMINS_EXEMPT, CHECK_PENDING, OFFER_UPDATE, YES_UPDATE, UPDATE_LIST,
+    CHECK_CLOSED, NONRESPONDERS, REMOVE_NAME, ALL_PASSED, PASSED_SINCE, PENDING_SINCE, ALREADY_REMOVED, ID_ONLY,
 }
 
 private val en = mapOf(
@@ -101,6 +104,14 @@ private val en = mapOf(
     T.OFFER_UPDATE to "You've already filled the form for %s. Want to update your answers?",
     T.YES_UPDATE to "Yes, update",
     T.UPDATE_LIST to "You can update your answers for:",
+    T.CHECK_CLOSED to "The check closed on %s.",
+    T.NONRESPONDERS to "Didn't fill the form for %s by %s. The bot knows %d of %d members; only those are listed.",
+    T.REMOVE_NAME to "Remove %s",
+    T.ALL_PASSED to "Everyone the bot knows in %s has filled the form.",
+    T.PASSED_SINCE to "%s has filled the form since.",
+    T.PENDING_SINCE to "%s's answers are waiting for review.",
+    T.ALREADY_REMOVED to "Already removed.",
+    T.ID_ONLY to "id %d",
 )
 
 private val ru = mapOf(
@@ -178,6 +189,14 @@ private val ru = mapOf(
     T.OFFER_UPDATE to "Вы уже заполнили анкету для %s. Хотите обновить ответы?",
     T.YES_UPDATE to "Да, обновить",
     T.UPDATE_LIST to "Вы можете обновить ответы для:",
+    T.CHECK_CLOSED to "Проверка завершилась %s.",
+    T.NONRESPONDERS to "Не заполнили анкету для %s до %s. Бот знает %d из %d участников; в списке только они.",
+    T.REMOVE_NAME to "Исключить %s",
+    T.ALL_PASSED to "Все, кого бот знает в %s, заполнили анкету.",
+    T.PASSED_SINCE to "%s уже заполнил(а) анкету.",
+    T.PENDING_SINCE to "Ответы %s ждут решения.",
+    T.ALREADY_REMOVED to "Уже исключён(а).",
+    T.ID_ONLY to "id %d",
 )
 
 object Texts {

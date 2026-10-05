@@ -64,8 +64,8 @@ private class HandlerEnv(name: String) {
         Registry.roster = Roster(members)
         Registry.review = review
         Registry.flow = flow
-        Registry.registry = GroupRegistry(groups, sessions, subs, users, review, flow, tg.bot)
         Registry.checks = CheckService(groups, forms, subs, members, checks, sessions, users, admins, flow, Registry.roster, tg.bot, clock)
+        Registry.registry = GroupRegistry(groups, sessions, subs, users, review, flow, Registry.checks, tg.bot)
         groups.upsert(CHAT, "Club", true)
         forms.save(CHAT, Form("Hi", listOf(Text("q1", "Why?"), Text("q2", "Where?"))), 0, 9, clock.instant())
         tg.adminsOf[CHAT] = listOf(Admin(ADMIN, "Boss", false, true))
@@ -281,5 +281,23 @@ class HandlersTest : StringSpec({
         e.checks.get(CHAT) shouldBe null
         route(message(CHAT, "/remind@JoinBot 3d"))
         e.checks.openCheck(CHAT)!!.deadline shouldBe e.clock.instant().plus(java.time.Duration.ofDays(3))
+    }
+    "plain /start delivers an undelivered deadline list; a Remove click reaches the check" {
+        val e = HandlerEnv("h-deadline")
+        e.tg.adminsOf[CHAT] = listOf(Admin(U, "Ann", false, true, true))
+        e.checks.open(CHAT, e.clock.instant(), U, e.clock.instant())
+        e.checks.close(CHAT, e.clock.instant())
+        e.checks.notice(CHAT, U, false)
+        route(message(U, "/start"))
+        e.tg.sent.map { it.chatId to it.text } shouldBe listOf(U to Texts.t("en", T.ALL_PASSED, "Club"))
+
+        e.members.seen(CHAT, 7); e.tg.members[CHAT to 7L] = "member"
+        val rows = listOf(7, 8).joinToString(",") { """[{"text":"Remove $it","callback_data":"k|$CHAT|$it"}]""" }
+        fallback(upd(
+            """{"update_id":9,"callback_query":{"id":"cb","from":${user(U)},"chat_instance":"i","data":"k|$CHAT|7",""" +
+                """"message":{"message_id":900,"date":1,"chat":${chat(U)},"text":"list","reply_markup":{"inline_keyboard":[$rows]}}}}""",
+        ))
+        e.tg.calls.filter { it.startsWith("ban") } shouldBe listOf("ban $CHAT 7")
+        e.tg.edits.single() shouldBe EditMsg(U, 900, "list", listOf(listOf(Button("Remove 8", "k|$CHAT|8"))))
     }
 })

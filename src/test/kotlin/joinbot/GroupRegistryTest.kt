@@ -18,9 +18,13 @@ private class RegEnv(name: String) {
     val sessions = SessionRepo(db, testCrypto())
     val subs = SubmissionRepo(db, testCrypto())
     val users = BotUserRepo(db)
-    val review = ReviewService(subs, forms, groups, users, MemberRepo(db), AdminCheck(tg.bot, clock, 0), tg.bot, clock)
+    val members = MemberRepo(db)
+    val checks = CheckRepo(db)
+    val admins = AdminCheck(tg.bot, clock, 0)
+    val review = ReviewService(subs, forms, groups, users, members, admins, tg.bot, clock)
     val flow = ApplicantFlow(groups, forms, sessions, subs, users, review, tg.bot, clock)
-    val reg = GroupRegistry(groups, sessions, subs, users, review, flow, tg.bot)
+    val checkService = CheckService(groups, forms, subs, members, checks, sessions, users, admins, flow, Roster(members), tg.bot, clock)
+    val reg = GroupRegistry(groups, sessions, subs, users, review, flow, checkService, tg.bot)
 
     /** Group -100 with decider 1 who started the bot. */
     fun group(active: Boolean) {
@@ -157,5 +161,32 @@ class GroupRegistryTest : StringSpec({
             val suspended = e.tg.edits.any { it.messageId == copy }
             suspended shouldBe !e.groups.get(-100)!!.active
         }
+    }
+    "losing admin closes the check without a list" {
+        val e = RegEnv("registry check close")
+        e.group(active = true)
+        e.tg.adminsOf[-100] = listOf(Admin(1, "Boss", false, true, true))
+        e.checks.open(-100, e.clock.instant().plusSeconds(3600), 1, e.clock.instant())
+        e.checks.addMessage(-100, 11)
+        e.members.seen(-100, 5); e.tg.members[-100L to 5L] = "member"
+        e.reg.onBotStatus(-100, "G", isAdmin = false, canInvite = false)
+        e.checks.get(-100)!!.closedAt shouldBe e.clock.instant()
+        val closed = Texts.t(null, T.REMIND_POST, "2026-01-01 01:00 UTC") + "\n\n" + Texts.t(null, T.CHECK_CLOSED, "2026-01-01 00:00 UTC")
+        e.tg.edits shouldBe listOf(EditMsg(-100, 11, closed, emptyList()))
+        e.clock.now = e.clock.now.plusSeconds(7200)
+        e.checkService.tick()
+        e.tg.sent shouldBe emptyList()
+        e.checks.undelivered(1) shouldBe emptyList()
+    }
+
+    "losing admin sends the manual-review notice only to join applicants" {
+        val e = RegEnv("registry handoff join only")
+        e.group(active = true)
+        e.pending(5)
+        e.subs.create(-100, 6, 1, Profile("U6", null), mapOf("q1" to "x"), Status.PENDING, e.clock.instant(), Kind.CHECK)
+        e.reg.onBotStatus(-100, "G", isAdmin = true, canInvite = false)
+        e.tg.sent.map { it.chatId to it.text }.toSet() shouldBe setOf(
+            5L to Texts.t(null, T.MANUAL_REVIEW), -100L to Texts.t(null, T.GROUP_HANDOFF, 1), -100L to Texts.t(null, T.NEEDS_INVITE_RIGHT),
+        )
     }
 })

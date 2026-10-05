@@ -15,6 +15,7 @@ import eu.vendeli.tgbot.types.component.MessageUpdate
 import eu.vendeli.tgbot.types.component.MyChatMemberUpdate
 import eu.vendeli.tgbot.types.component.ProcessedUpdate
 import eu.vendeli.tgbot.types.component.UpdateType
+import eu.vendeli.tgbot.types.msg.Message
 import kotlin.coroutines.cancellation.CancellationException
 import org.slf4j.LoggerFactory
 
@@ -42,7 +43,7 @@ private val REMIND = Regex("""/remind(@\w+)?(?:\s+(\S+))?\s*""")
 
 /**
  * `/start r<chatId>` enters that group's check. Plain `/start` resumes an open form, else hands an admin their
- * pending reviews, else offers updates to a passed member, else explains how to join.
+ * pending reviews and undelivered deadline lists, else offers updates to a passed member, else explains how to join.
  */
 @CommandHandler(["/start"])
 suspend fun start(user: User, update: ProcessedUpdate): Unit = guarded("start") {
@@ -52,7 +53,8 @@ suspend fun start(user: User, update: ProcessedUpdate): Unit = guarded("start") 
     val chatId = START_CHECK.matchEntire((update as MessageUpdate).message.text.orEmpty())?.groupValues?.get(1)?.toLongOrNull()
     if (chatId != null) return Registry.checks.enter(chatId, user.profile(), user.id, lang)
     if (Registry.flow.onStart(user.id, lang)) return
-    if (Registry.review.deliverPending(user.id) > 0) return
+    val reviews = Registry.review.deliverPending(user.id)
+    if (reviews + Registry.checks.deliverNotices(user.id) > 0) return
     if (Registry.checks.offerUpdates(user.id, lang)) return
     Registry.bot.sendText(user.id, Texts.t(lang, T.HOW_TO_JOIN))
 }
@@ -139,6 +141,11 @@ suspend fun fallback(update: ProcessedUpdate): Unit = guarded("update") {
                 data.startsWith("r|") -> Registry.review.onDecision(q.from.id, q.id, data)
                 data.startsWith("u|") ->
                     Registry.checks.onUpdateButton(q.from.id, q.id, data, q.from.profile(), q.from.languageCode)
+                data.startsWith("k|") && q.message is Message -> {
+                    val m = q.message as Message
+                    val keyboard = m.replyMarkup?.keyboard.orEmpty().map { row -> row.map { Button(it.text, it.callbackData.orEmpty()) } }
+                    Registry.checks.onRemoveButton(q.from.id, q.id, data, m.messageId, m.text.orEmpty(), keyboard)
+                }
                 else -> Registry.bot.answerCallback(q.id)
             }
         }

@@ -5,6 +5,9 @@ import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import java.time.Duration
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 
 private const val CHAT = -100L
 private const val CHAT2 = -200L
@@ -38,7 +41,24 @@ private class CheckEnv(name: String) {
     }
 
     fun texts() = tg.sent.map { it.chatId to it.text }
+
+    /** A check that opened and was due at the start, with two group posts; the clock is an hour past it. */
+    fun dueCheck() {
+        checks.open(CHAT, clock.instant(), ADMIN, clock.instant())
+        checks.addMessage(CHAT, 11); checks.addMessage(CHAT, 12)
+        clock.now = clock.now.plus(Duration.ofHours(1))
+    }
+
+    fun member(userId: Long, status: String = "member", profile: Profile? = null) {
+        members.seen(CHAT, userId)
+        tg.members[CHAT to userId] = status
+        if (profile != null) tg.profiles[userId] = profile
+    }
 }
+
+private const val DEADLINE = "2026-01-01 00:00 UTC"
+private fun header(known: Int, total: Int) = Texts.t(null, T.NONRESPONDERS, "Club", DEADLINE, known, total)
+private fun removeButton(label: String, userId: Long) = listOf(Button(Texts.t(null, T.REMOVE_NAME, label), "k|$CHAT|$userId"))
 
 class CheckServiceTest : StringSpec({
     "parseDuration bounds" {
@@ -230,5 +250,128 @@ class CheckServiceTest : StringSpec({
         e.sessions.get(U, CHAT)!!.step shouldBe WAITING
         e.svc.enter(CHAT, ann, U, "en")
         e.texts().takeLast(2) shouldBe List(2) { U to Texts.t("en", T.QUEUED, "Club") }
+    }
+    "the deadline closes the check, edits every post and lists non-responders" {
+        val e = CheckEnv("cs-deadline")
+        e.dueCheck()
+        e.member(U, profile = Profile("Bob", "bob"))
+        e.member(6); e.members.pass(CHAT, 6, e.clock.instant())
+        e.member(8); e.subs.create(CHAT, 8, 1, ann, mapOf("q1" to "x"), Status.PENDING, e.clock.instant(), Kind.CHECK)
+        e.tg.memberCount = 10
+        e.svc.tick()
+        e.checks.get(CHAT)!!.closedAt shouldBe e.clock.instant()
+        val closed = Texts.t(null, T.REMIND_POST, DEADLINE) + "\n\n" + Texts.t(null, T.CHECK_CLOSED, "2026-01-01 01:00 UTC")
+        e.tg.edits shouldBe listOf(EditMsg(CHAT, 11, closed, emptyList()), EditMsg(CHAT, 12, closed, emptyList()))
+        e.tg.sent.single() shouldBe SentMsg(ADMIN, header(3, 10), listOf(removeButton("Bob @bob", U)))
+        e.tg.sent.single().buttons.single().single().text shouldBe "Remove Bob @bob"
+        e.checks.undelivered(ADMIN).shouldBeEmpty()
+    }
+
+    "leavers and admins are left off; a failed lookup is listed by id" {
+        val e = CheckEnv("cs-deadline-skip")
+        e.dueCheck()
+        e.member(5, "left")
+        e.member(6, "administrator")
+        e.member(7); e.tg.failMemberFor += 7L
+        e.tg.memberCount = 10
+        e.svc.tick()
+        e.tg.sent.single() shouldBe SentMsg(ADMIN, header(2, 10), listOf(removeButton(Texts.t(null, T.ID_ONLY, 7L), 7)))
+        e.tg.sent.single().buttons.single().single().text shouldBe "Remove id 7"
+        e.members.known(CHAT, 5) shouldBe false
+        e.members.known(CHAT, 6) shouldBe true
+    }
+
+    "a second tick sends nothing" {
+        val e = CheckEnv("cs-deadline-once")
+        e.dueCheck()
+        e.member(U)
+        coroutineScope { repeat(2) { launch(Dispatchers.Default) { e.svc.tick() } } }
+        e.svc.tick()
+        e.tg.sent.size shouldBe 1
+        e.tg.edits.size shouldBe 2
+    }
+
+    "more than 50 non-responders split into messages of 50 buttons" {
+        val e = CheckEnv("cs-deadline-chunks")
+        e.dueCheck()
+        for (u in 1000L until 1120L) e.member(u)
+        e.tg.memberCount = 200
+        e.svc.tick()
+        e.tg.sent.map { it.buttons.size } shouldBe listOf(50, 50, 20)
+        e.tg.sent.forEach { m ->
+            m.chatId shouldBe ADMIN
+            m.text shouldBe header(120, 200)
+            m.buttons.forEach { it.size shouldBe 1 }
+        }
+        e.tg.sent.flatMap { it.buttons.flatten() }.map { it.data } shouldBe (1000L until 1120L).map { "k|$CHAT|$it" }
+    }
+
+    "nobody left to list says everyone filled it" {
+        val e = CheckEnv("cs-deadline-none")
+        e.dueCheck()
+        e.member(6); e.members.pass(CHAT, 6, e.clock.instant())
+        e.svc.tick()
+        e.tg.sent.single() shouldBe SentMsg(ADMIN, Texts.t(null, T.ALL_PASSED, "Club"), emptyList())
+    }
+
+    "Remove kicks, records REMOVED and drops the button" {
+        val e = CheckEnv("cs-remove")
+        e.member(U, profile = Profile("Bob", "bob"))
+        val keyboard = listOf(removeButton("Bob @bob", U), removeButton("id 7", 7))
+        e.svc.onRemoveButton(ADMIN, "cb", "k|$CHAT|$U", 900, "list", keyboard)
+        e.tg.calls.filter { it.startsWith("ban") || it.startsWith("answer") } shouldBe listOf("ban $CHAT $U", "answer cb ")
+        e.members.known(CHAT, U) shouldBe false
+        val s = e.subs.list(CHAT, null).single()
+        s.status shouldBe Status.REMOVED
+        s.kind shouldBe Kind.CHECK
+        s.decidedBy shouldBe ADMIN
+        s.decidedAt shouldBe e.clock.instant()
+        s.profile shouldBe Profile("Bob", "bob")
+        s.answers.shouldBeNull()
+        s.formVersion.shouldBeNull()
+        e.tg.edits.single() shouldBe EditMsg(ADMIN, 900, "list", listOf(removeButton("id 7", 7)))
+    }
+
+    "Remove refuses passed, pending and already removed" {
+        val e = CheckEnv("cs-remove-refuse")
+        suspend fun click(userId: Long, admin: Long = ADMIN) = e.svc.onRemoveButton(admin, "cb", "k|$CHAT|$userId", 900, "list", emptyList())
+        fun alert(key: T, vararg args: Any) = "answer cb ${Texts.t(null, key, *args)} alert"
+        e.member(U, profile = Profile("Bob", "bob")); e.members.pass(CHAT, U, e.clock.instant())
+        click(U)
+        e.tg.calls.last() shouldBe alert(T.PASSED_SINCE, "Bob")
+        e.member(8, profile = Profile("Cy", null)); e.subs.create(CHAT, 8, 1, ann, null, Status.PENDING, e.clock.instant(), Kind.CHECK)
+        click(8)
+        e.tg.calls.last() shouldBe alert(T.PENDING_SINCE, "Cy")
+        click(9)
+        e.tg.calls.last() shouldBe alert(T.ALREADY_REMOVED)
+        e.member(10)
+        click(10, admin = 3)
+        e.tg.calls.last() shouldBe alert(T.NOT_ADMIN_ANYMORE)
+        e.tg.banResult = Kick.NO_RIGHT
+        click(10)
+        e.tg.calls.last() shouldBe alert(T.NO_BAN_RIGHT)
+        e.tg.banResult = Kick.TRANSIENT
+        click(10)
+        e.tg.calls.last() shouldBe alert(T.TRY_AGAIN)
+        e.members.known(CHAT, 10) shouldBe true
+        e.subs.list(CHAT, Status.REMOVED).shouldBeEmpty()
+        e.tg.edits.shouldBeEmpty()
+    }
+
+    "an admin who blocked the bot gets the list on /start" {
+        val e = CheckEnv("cs-deadline-blocked")
+        e.dueCheck()
+        e.member(U, profile = Profile("Bob", null))
+        e.tg.memberCount = 4
+        e.tg.sendResultByChat[ADMIN] = Sent.Forbidden
+        e.svc.tick()
+        e.checks.undelivered(ADMIN) shouldBe listOf(CHAT)
+        e.users.dmOk(ADMIN) shouldBe false
+        e.tg.sendResultByChat.clear()
+        e.users.started(ADMIN, null)
+        e.svc.deliverNotices(ADMIN) shouldBe 1
+        e.tg.sent.last() shouldBe SentMsg(ADMIN, header(1, 4), listOf(removeButton("Bob", U)))
+        e.checks.undelivered(ADMIN).shouldBeEmpty()
+        e.svc.deliverNotices(ADMIN) shouldBe 0
     }
 })

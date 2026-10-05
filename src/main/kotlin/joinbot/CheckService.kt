@@ -6,8 +6,15 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.hours
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.slf4j.LoggerFactory
 
 private val SHOWN = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'").withZone(ZoneOffset.UTC)
 
@@ -16,8 +23,12 @@ fun shownDate(at: Instant): String = SHOWN.format(at)
 
 private val DURATION = Regex("""(\d{1,4})([hd])""")
 private const val MAX_HOURS = 365L * 24
+private const val BUTTONS_PER_LIST = 50
 
-/** The member check (spec §1–§2): `/remind` in the group, the deep-link entry, and passed members' updates. */
+/** A closed check's deadline list: everyone on the roster still to answer; a null profile means the lookup failed. */
+private class Roll(val chatId: Long, val title: String, val deadline: Instant, val known: Int, val total: Int, val people: List<Pair<Long, Profile?>>)
+
+/** The member check (spec §1–§5): `/remind` in the group, the deep-link entry, passed members' updates, and the deadline. */
 class CheckService(
     private val groups: GroupRepo,
     private val forms: FormRepo,
@@ -32,6 +43,8 @@ class CheckService(
     private val bot: TelegramBot,
     private val clock: Clock,
 ) {
+    private val log = LoggerFactory.getLogger(CheckService::class.java)
+
     @Volatile private var username: String? = null
 
     /** Cached after the first successful getMe; null while Telegram can't tell us. */
@@ -119,5 +132,129 @@ class CheckService(
         ) return bot.answerCallback(callbackId, Texts.t(lang, T.STALE_BUTTON), alert = true)
         bot.answerCallback(callbackId)
         flow.startMember(chatId, userId, profile, lang, Kind.UPDATE)
+    }
+
+    /** One deadline pass (spec §5). The conditional close makes each check's list go out once, however many passes overlap. */
+    suspend fun tick() {
+        val now = clock.instant()
+        for (c in checks.due(now)) {
+            try {
+                if (!checks.close(c.chatId, now)) continue
+                closePosts(c.chatId, c.deadline, now)
+                val roll = roll(c)
+                for (adminId in admins.checkDeciders(c.chatId)) checks.notice(c.chatId, adminId, sendRoll(roll, adminId))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.warn("deadline failed: {}", e.javaClass.simpleName)
+            }
+        }
+    }
+
+    // ponytail: an hourly loop means a list lands up to an hour after the deadline
+    fun start(scope: CoroutineScope): Job = scope.launch {
+        while (true) {
+            try {
+                tick()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.warn("deadline pass failed: {}", e.javaClass.simpleName)
+            }
+            delay(1.hours)
+        }
+    }
+
+    /** The group went inactive: the check closes without a list (spec §7). */
+    suspend fun closeForChat(chatId: Long) {
+        val now = clock.instant()
+        val c = checks.openCheck(chatId) ?: return
+        if (checks.close(chatId, now)) closePosts(chatId, c.deadline, now)
+    }
+
+    /** On /start: the deadline lists [adminId] couldn't be sent. Returns how many were sent now. */
+    suspend fun deliverNotices(adminId: Long): Int {
+        var sent = 0
+        for (chatId in checks.undelivered(adminId)) {
+            val c = checks.get(chatId) ?: continue
+            // an admin who lost the rights since doesn't get the member list
+            if (!admins.canDecideCheck(chatId, adminId)) { checks.notice(chatId, adminId, true); continue }
+            if (!sendRoll(roll(c), adminId)) break // a 403 means the rest would fail too
+            checks.notice(chatId, adminId, true)
+            sent++
+        }
+        return sent
+    }
+
+    /**
+     * `k|<chatId>|<userId>` clicked on the list message [messageId], which shows [text] and [keyboard].
+     * Removes the person unless they answered since or were removed already; then drops their button from this copy only.
+     */
+    suspend fun onRemoveButton(adminId: Long, callbackId: String, data: String, messageId: Long, text: String, keyboard: Keyboard) {
+        val lang = users.lang(adminId)
+        suspend fun alert(key: T, vararg args: Any) = bot.answerCallback(callbackId, Texts.t(lang, key, *args), alert = true)
+        val parts = data.split('|')
+        val chatId = parts.getOrNull(1)?.toLongOrNull()
+        val userId = parts.getOrNull(2)?.toLongOrNull()
+        if (parts.size != 3 || chatId == null || userId == null) return alert(T.STALE_BUTTON)
+        if (!admins.canDecideCheck(chatId, adminId, fresh = true)) return alert(T.NOT_ADMIN_ANYMORE)
+        val profile = bot.memberInfo(chatId, userId)?.profile
+        val name = profile?.name ?: Texts.t(lang, T.ID_ONLY, userId)
+        if (members.passedAt(chatId, userId) != null) return alert(T.PASSED_SINCE, name)
+        if (subs.pendingCheck(chatId, userId) != null) return alert(T.PENDING_SINCE, name)
+        if (!members.known(chatId, userId)) return alert(T.ALREADY_REMOVED)
+        // ponytail: two deciders clicking the same person at once can both kick and record; a conditional roster delete if that matters
+        when (bot.removeMember(chatId, userId)) {
+            Kick.OK, Kick.GONE -> {}
+            Kick.NO_RIGHT -> return alert(T.NO_BAN_RIGHT)
+            Kick.TRANSIENT -> return alert(T.TRY_AGAIN)
+        }
+        val now = clock.instant()
+        members.remove(chatId, userId)
+        subs.create(chatId, userId, null, profile ?: Profile(name, null), null, Status.REMOVED, now, Kind.CHECK, adminId, now)
+        bot.answerCallback(callbackId)
+        val rest = keyboard.map { row -> row.filter { it.data != data } }.filter { it.isNotEmpty() }
+        bot.editText(adminId, messageId, text, rest)
+    }
+
+    /** Every post of the check loses its button and says when it closed. */
+    private suspend fun closePosts(chatId: Long, deadline: Instant, at: Instant) {
+        val text = Texts.t(null, T.REMIND_POST, shownDate(deadline)) + "\n\n" + Texts.t(null, T.CHECK_CLOSED, shownDate(at))
+        for (messageId in checks.messages(chatId)) bot.editText(chatId, messageId, text)
+    }
+
+    /** Roster rows without a pass or a pending Check; leavers are dropped from the roster, admins skipped. */
+    private suspend fun roll(c: Check): Roll {
+        val people = members.unpassed(c.chatId).filter { subs.pendingCheck(c.chatId, it) == null }.mapNotNull { userId ->
+            val info = bot.memberInfo(c.chatId, userId)
+            when (info?.membership) {
+                Membership.GONE -> { members.remove(c.chatId, userId); null }
+                Membership.ADMIN -> null
+                else -> userId to info?.profile // a failed lookup stays on the list, by id
+            }
+        }
+        return Roll(c.chatId, groups.get(c.chatId)?.title.orEmpty(), c.deadline, members.count(c.chatId), bot.memberCount(c.chatId) ?: 0, people)
+    }
+
+    /** False only when Telegram refused the first message (403). */
+    private suspend fun sendRoll(r: Roll, adminId: Long): Boolean {
+        val lang = users.lang(adminId)
+        val messages = if (r.people.isEmpty()) listOf(Texts.t(lang, T.ALL_PASSED, r.title) to emptyList<List<Button>>())
+        else {
+            val header = Texts.t(lang, T.NONRESPONDERS, r.title, shownDate(r.deadline), r.known, r.total)
+            r.people.chunked(BUTTONS_PER_LIST).map { chunk ->
+                header to chunk.map { (userId, p) ->
+                    val label = p?.let { it.name + it.username?.let { u -> " @$u" }.orEmpty() } ?: Texts.t(lang, T.ID_ONLY, userId)
+                    listOf(Button(Texts.t(lang, T.REMOVE_NAME, label), "k|${r.chatId}|$userId"))
+                }
+            }
+        }
+        for ((i, m) in messages.withIndex()) {
+            if (bot.sendText(adminId, m.first, m.second) == Sent.Forbidden && i == 0) {
+                users.forbidden(adminId)
+                return false
+            }
+        }
+        return true
     }
 }

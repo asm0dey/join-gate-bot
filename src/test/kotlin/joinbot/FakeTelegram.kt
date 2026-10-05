@@ -47,6 +47,10 @@ class FakeTelegram {
     val adminsOf: MutableMap<Long, List<Admin>> = ConcurrentHashMap()
     /** Status per (chat, user) as getChatMember reports it; absent = "left". */
     val members: MutableMap<Pair<Long, Long>, String> = ConcurrentHashMap()
+    /** Name and username getChatMember reports per user; absent = "User" @user. */
+    val profiles: MutableMap<Long, Profile> = ConcurrentHashMap()
+    /** getChatMember fails for these users. */
+    val failMemberFor: MutableSet<Long> = ConcurrentHashMap.newKeySet()
     @Volatile var memberCount: Int? = null
     /** Result of banChatMember: OK, NO_RIGHT or TRANSIENT (GONE is treated as OK). */
     @Volatile var banResult: Kick = Kick.OK
@@ -117,7 +121,8 @@ class FakeTelegram {
         }
         "getChatMember" -> {
             val chat = j.long("chat_id"); val user = j.long("user_id")
-            ok(memberJson(user, members[chat to user] ?: "left"))
+            if (user in failMemberFor) fail(400, "Bad Request: member lookup failed")
+            else ok(memberJson(user, members[chat to user] ?: "left", profiles[user] ?: Profile("User", "user")))
         }
         "getChatMemberCount" -> memberCount?.let { ok("$it") } ?: fail(400, "Bad Request: chat not found")
         "banChatMember" -> {
@@ -188,8 +193,9 @@ private fun Admin.json() =
     "can_restrict_members":$canBan,"can_promote_members":false,"can_change_info":false,"can_invite_users":$canInvite,
     "can_manage_video_chats":false,"can_post_stories":false,"can_edit_stories":false,"can_delete_stories":false}"""
 
-private fun memberJson(id: Long, status: String): String {
-    val user = """"user":{"id":$id,"is_bot":false,"first_name":"User","username":"user"}"""
+private fun memberJson(id: Long, status: String, p: Profile): String {
+    val username = p.username?.let { ""","username":${Json.encodeToString(it)}""" }.orEmpty()
+    val user = """"user":{"id":$id,"is_bot":false,"first_name":${Json.encodeToString(p.name)}$username}"""
     val rest = listOf(
         "can_send_messages", "can_send_audios", "can_send_documents", "can_send_photos", "can_send_videos",
         "can_send_video_notes", "can_send_voice_notes", "can_send_polls", "can_send_other_messages",
@@ -198,7 +204,7 @@ private fun memberJson(id: Long, status: String): String {
     ).joinToString(",") { """"$it":false""" }
     return when (status) {
         "creator" -> """{"status":"creator",$user,"is_anonymous":false}"""
-        "administrator" -> Admin(id, "User", false, false).json().replaceFirst(""""first_name":"User"""", """"first_name":"User","username":"user"""")
+        "administrator" -> Admin(id, p.name, false, false).json().replaceFirst(Regex(""""user":\{[^}]*\}"""), Regex.escapeReplacement(user))
         "restricted" -> """{"status":"restricted",$user,"is_member":true,$rest,"until_date":0}"""
         else -> """{"status":"$status",$user${if (status == "kicked") ""","until_date":0""" else ""}}"""
     }
