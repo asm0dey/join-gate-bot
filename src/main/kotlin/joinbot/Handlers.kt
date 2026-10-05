@@ -105,24 +105,26 @@ suspend fun chatMigrated(update: ProcessedUpdate): Unit = guarded("migration") {
     Registry.registry.onMigrated(m.chat.id, m.migrateToChatId ?: return)
 }
 
+/** A group message feeds the roster; `/remind` (bare or addressed to this bot) starts or re-announces a check. */
+private suspend fun groupMessage(m: Message) {
+    val from = m.from
+    if (from != null && !from.isBot && m.senderChat == null) Registry.roster.seen(m.chat.id, from.id)
+    val remind = REMIND.matchEntire(m.text ?: return) ?: return
+    // an anonymous admin posts as the group: from is GroupAnonymousBot, sender_chat the group
+    val anonymous = m.senderChat?.id == m.chat.id
+    Registry.checks.remind(
+        m.chat.id, (from ?: return).id, anonymous, remind.groupValues[2].ifEmpty { null },
+        remind.groupValues[1].removePrefix("@").ifEmpty { null },
+    )
+}
+
 /** Everything no command matched: form answers in private, and every button. In groups, `/remind`; other chatter only feeds the roster. */
 @UnprocessedHandler
 suspend fun fallback(update: ProcessedUpdate): Unit = guarded("update") {
     when (update) {
         is MessageUpdate -> {
             val m = update.message
-            if (m.chat.type == ChatType.Group || m.chat.type == ChatType.Supergroup) {
-                val from = m.from
-                if (from != null && !from.isBot && m.senderChat == null) Registry.roster.seen(m.chat.id, from.id)
-                val remind = REMIND.matchEntire(m.text ?: return) ?: return
-                // an anonymous admin posts as the group: from is GroupAnonymousBot, sender_chat the group
-                val anonymous = m.senderChat?.id == m.chat.id
-                Registry.checks.remind(
-                    m.chat.id, (from ?: return).id, anonymous, remind.groupValues[2].ifEmpty { null },
-                    remind.groupValues[1].removePrefix("@").ifEmpty { null },
-                )
-                return
-            }
+            if (m.chat.type == ChatType.Group || m.chat.type == ChatType.Supergroup) return groupMessage(m)
             if (!update.isPrivate()) return
             val u = update.user
             if (!Registry.flow.onMessage(u.id, update.message.text, u.languageCode)) {
