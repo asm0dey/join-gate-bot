@@ -12,7 +12,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- default entry point; override with -Dexec.mainClass=... -->
         <exec.mainClass>joinbot.MainKt</exec.mainClass>
-        <kotlin.version>2.4.20</kotlin.version>
+        <kotlin.version>2.4.21</kotlin.version>
         <ksp.maven.version>0.4.7</ksp.maven.version>
         <telegrambot.version>9.7.0</telegrambot.version>
         <ktor.version>3.6.0</ktor.version>
@@ -20,11 +20,11 @@
         <coroutines.version>1.11.0</coroutines.version>
         <h2.version>2.5.252</h2.version>
         <hikari.version>7.1.0</hikari.version>
-        <tinylog.version>2.8.0</tinylog.version>
+        <tinylog.version>2.8.1</tinylog.version>
         <kotest.version>6.2.5</kotest.version>
         <tink.version>1.23.0</tink.version>
-        <flyway.version>13.9.0</flyway.version>
-        <exposed.version>1.5.0</exposed.version>
+        <flyway.version>13.10.0</flyway.version>
+        <exposed.version>1.5.1</exposed.version>
     </properties>
 
     <dependencies>
