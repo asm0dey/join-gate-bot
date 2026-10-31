@@ -3,12 +3,12 @@
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "7.3.1",
     "@tailwindcss/vite": "4.3.3",
-    "@types/bun": "1.4.2",
-    "daisyui": "5.7.47",
-    "svelte-check": "4.7.6",
+    "@types/bun": "1.4.4",
+    "daisyui": "5.7.50",
+    "svelte-check": "4.7.7",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3",
-    "vite": "8.3.2"
+    "vite": "8.3.5"
   },
   "private": true,
   "scripts": {
@@ -18,6 +18,6 @@
   },
   "type": "module",
   "dependencies": {
-    "svelte": "5.57.1"
+    "svelte": "5.57.3"
   }
 }
