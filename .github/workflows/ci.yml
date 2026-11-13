@@ -34,7 +34,7 @@ jobs:
               - '.github/workflows/**'
 
       # Installs Java from .sdkmanrc and Bun from mise.toml, and caches both.
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
 
       - uses: actions/cache@v6
         if: github.event_name != 'pull_request' || steps.changes.outputs.web == 'true'
@@ -71,6 +71,6 @@ jobs:
           key: sonar-${{ runner.os }}
           restore-keys: sonar-${{ runner.os }}
 
-      - uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+      - uses: SonarSource/sonarqube-scan-action@59202af334b4ba7b5db01b701b8e79f8b3bef0f4 # v8.5.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
