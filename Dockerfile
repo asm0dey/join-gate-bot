@@ -1,4 +1,4 @@
-FROM oven/bun:1.4.2@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895 AS web
+FROM oven/bun:1.4.5@sha256:3aa040e5445efa09d75bb428a64ba50db13e2b3ac9b6b0c7f145615f62b2ee18 AS web
 WORKDIR /web
 
 # Lockfile first so a source-only change doesn't re-run `bun install`.
@@ -12,7 +12,7 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
 COPY web ./
 RUN bun run build
 
-FROM bellsoft/liberica-runtime-container:jdk-27-glibc@sha256:d3ae74eb80560c52ef476224f42fff26e909096e74bd818553cdb34a4b81c996 AS build
+FROM bellsoft/liberica-runtime-container:jdk-27-glibc@sha256:8143b03be7a2175094e08bf5adde09b9fb5a9b116b8dcde64f17d44f6309b506 AS build
 WORKDIR /src
 
 # Wrapper and pom only, so a source-only change doesn't re-resolve dependencies.
@@ -32,7 +32,7 @@ RUN --mount=type=cache,target=/root/.m2 \
 RUN mkdir -p /data-seed && chown 10001:10001 /data-seed
 
 # JRE 27 (bytecode targets 25), glibc, CDS archive for faster restarts.
-FROM bellsoft/hardened-liberica-runtime-container:jre-27-cds-distroless-glibc@sha256:da676229406ffdd752e5da50c6adfa579874484072ba86c19b8b76e2c98634a1
+FROM bellsoft/hardened-liberica-runtime-container:jre-27-cds-distroless-glibc@sha256:68a9580ea1715ef490055a5ec6a3360ccbd8c03cd67dcd9d0fc3e8a8549d4868
 WORKDIR /app
 
 # Code is root-owned and read-only to the running user.
